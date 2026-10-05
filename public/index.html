@@ -37,6 +37,7 @@
     </nav>
     <div class="side-foot">
       <a class="navlink" id="dl-app" href="/download" hidden><svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/></svg>Télécharger l'app</a>
+      <div class="drive" id="drive-st" hidden></div>
       <p class="muted small" id="quota"></p>
       <div class="who" id="who"></div>
     </div>
@@ -107,6 +108,7 @@
           <div>
             <div class="xhead"><span class="status" id="x-status"></span></div>
             <div class="prog" id="x-prog" hidden><div id="x-bar"></div></div>
+            <div class="lact"><button class="btn" id="x-gshare" hidden>Partager via Google Drive</button><button class="btn ghost" id="x-reveal" hidden>Afficher dans le dossier</button></div>
             <div class="share" id="x-share" hidden>
               <input id="x-link" readonly><button class="btn" id="x-copy">Copier le lien</button><a class="btn ghost" id="x-open" target="_blank">Ouvrir</a>
             </div>

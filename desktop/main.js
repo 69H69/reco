@@ -1,9 +1,12 @@
-// Reco Desktop — coque Electron autour de l'appli Reco (hébergée sur ton serveur Cloudflare).
+// Reco Desktop — appli autonome : les vidéos sont enregistrées sur le PC (dossier Vidéos/Reco) et partagées par Google Drive.
+// (Mode serveur optionnel : RECO_SERVER=https://… ou config.server, pour utiliser un serveur Reco Cloudflare.)
 // Ajoute ce que le navigateur ne sait pas faire : sélecteur d'écran/fenêtre, son de l'ordinateur (Windows),
 // fenêtre de contrôle toujours au premier plan et INVISIBLE dans l'enregistrement, icône de barre système, raccourci.
 const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, Tray, Menu, globalShortcut, nativeImage } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const local = require("./local");
+const drive = require("./drive");
 
 const TEST = process.env.RECO_TEST === "1";
 if (TEST) {
@@ -12,6 +15,7 @@ if (TEST) {
 }
 if (process.env.RECO_USERDATA) app.setPath("userData", process.env.RECO_USERDATA); // profil isolé (tests)
 if (!app.requestSingleInstanceLock()) app.quit();
+local.registerScheme();
 
 const ICON = path.join(__dirname, "assets", "icon.png");
 const CFG = () => path.join(app.getPath("userData"), "config.json");
@@ -19,6 +23,7 @@ const DEFAULTS = (() => { try { return JSON.parse(fs.readFileSync(path.join(__di
 const loadCfg = () => { try { return JSON.parse(fs.readFileSync(CFG(), "utf8")); } catch { return {}; } };
 const saveCfg = (c) => fs.writeFileSync(CFG(), JSON.stringify(c, null, 2));
 const serverUrl = () => process.env.RECO_SERVER || loadCfg().server || "";
+const LOCAL_MODE = () => !serverUrl();
 
 let win = null, tray = null;
 
@@ -28,7 +33,8 @@ function createMain() {
   win = new BrowserWindow({
     width: 1280, height: 820, minWidth: 900, minHeight: 600, title: "Reco", icon: ICON,
     backgroundColor: "#fdfdfd", autoHideMenuBar: true, show: false,
-    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true,
+      additionalArguments: LOCAL_MODE() ? ["--reco-local"] : [] },
   });
   win.once("ready-to-show", () => win.show());
   openServer();
@@ -50,7 +56,7 @@ function createMain() {
     child.setPosition(width - 300, 40);
   });
   win.webContents.on("will-navigate", (e, url) => {
-    if (url.startsWith("file:")) return;
+    if (url.startsWith("file:") || url.startsWith("reco:")) return;
     if (origin(url) !== origin(serverUrl())) { e.preventDefault(); shell.openExternal(url); }
   });
   win.on("close", (e) => { if (!app.isQuitting && tray) { e.preventDefault(); win.hide(); } });
@@ -59,7 +65,7 @@ function createMain() {
 function openServer() {
   const s = serverUrl();
   if (s) win.loadURL(s);
-  else win.loadFile(path.join(__dirname, "setup.html"), { query: { suggested: DEFAULTS.server || "" } });
+  else win.loadURL("reco://app/index.html");
 }
 
 // ── sélecteur d'écran / de fenêtre (remplace celui du navigateur) ──
@@ -105,7 +111,7 @@ function createTray() {
     { label: "Ouvrir Reco", click: showWin },
     { label: "Nouvel enregistrement   Ctrl+Maj+R", click: () => { showWin(); win.webContents.executeJavaScript('document.querySelector("#b-new")?.click()'); } },
     { type: "separator" },
-    { label: "Changer de serveur…", click: () => { const c = loadCfg(); delete c.server; saveCfg(c); showWin(); openServer(); } },
+    { label: "Ouvrir le dossier des vidéos", click: () => shell.openPath(local.videosDir()) },
     { label: "Quitter", click: () => { app.isQuitting = true; app.quit(); } },
   ]));
   tray.on("click", showWin);
@@ -126,6 +132,9 @@ app.on("second-instance", () => { if (win) { win.show(); win.focus(); } });
 app.whenReady().then(() => {
   app.setAppUserModelId("app.reco.desktop");
   setupCapture();
+  local.handleProtocol();
+  local.register({ loadCfg, saveCfg });
+  drive.register({ loadCfg, saveCfg, win: () => win });
   createMain();
   createTray();
   globalShortcut.register("CommandOrControl+Shift+R", () => {

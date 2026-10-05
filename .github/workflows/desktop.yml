@@ -24,6 +24,12 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - name: Identifiants Google Drive (secret du dépôt GOOGLE_CLIENT_JSON, facultatif)
+        shell: bash
+        run: if [ -n "$GOOGLE_CLIENT_JSON" ]; then printf '%s' "$GOOGLE_CLIENT_JSON" > google-client.json; echo "Google Drive configuré"; else echo "Pas d'identifiants Google : partage Drive désactivé"; fi
+        env:
+          GOOGLE_CLIENT_JSON: ${{ secrets.GOOGLE_CLIENT_JSON }}
+      - run: node copy-ui.mjs
       - name: Fabriquer (Mac)
         if: runner.os == 'macOS'
         run: npx electron-builder --mac --publish never

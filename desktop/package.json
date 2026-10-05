@@ -7,8 +7,9 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win",
-    "dist:mac": "electron-builder --mac"
+    "dist": "node copy-ui.mjs && electron-builder --win",
+    "dist:mac": "node copy-ui.mjs && electron-builder --mac",
+    "copy-ui": "node copy-ui.mjs"
   },
   "build": {
     "appId": "app.reco.desktop",
@@ -20,9 +21,13 @@
       "main.js",
       "preload.js",
       "picker-preload.js",
+      "local.js",
+      "drive.js",
       "*.html",
       "default-server.json",
-      "assets/**"
+      "google-client.json",
+      "assets/**",
+      "ui/**"
     ],
     "win": {
       "target": "nsis",

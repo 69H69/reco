@@ -53,11 +53,71 @@ class Uploader {
   abort() { this.aborted = true; if (this.uploadId) api("/api/upload/abort", { key: this.key, uploadId: this.uploadId }).catch(() => {}); }
 }
 
+// ───────── mode local (appli de bureau) : vidéos sur le PC, partage par Google Drive ─────────
+const LOCAL = !!(window.recoDesktop && window.recoDesktop.local);
+const L = LOCAL ? window.recoDesktop.lib : null, D = LOCAL ? window.recoDesktop.drive : null;
+class LocalWriter { // même interface que Uploader, mais écrit dans Vidéos/Reco pendant l'enregistrement
+  constructor(ext) { this.ext = ext; this.sent = 0; this.pendingSize = 0; this.q = Promise.resolve(); }
+  async start() { Object.assign(this, await L.start(this.ext)); return this; }
+  push(blob) {
+    this.pendingSize += blob.size;
+    this.q = this.q.then(async () => { if (this.aborted) return; await L.chunk(this.id, await blob.arrayBuffer()); this.sent += blob.size; this.pendingSize -= blob.size; this.onprogress?.(); }).catch((e) => (this.error = e));
+  }
+  async finish(meta) { await this.q; if (this.error) throw this.error; return L.finish(this.id, meta); }
+  abort() { this.aborted = true; if (this.id) L.abort(this.id).catch(() => {}); }
+}
+const Writer = LOCAL ? LocalWriter : Uploader;
+const thumbOf = (v) => (LOCAL ? v.thumbUrl : `/t/${v.id}`);
+const fileOf = (v) => (LOCAL ? v.url : `/f/${v.id}`);
+const linkOf = (v) => (LOCAL ? v.drive?.link || "" : `${location.origin}/v/${v.id}`);
+async function saveThumb(meta, blob) {
+  if (!blob) return meta;
+  if (LOCAL) return L.thumb(meta.id, await blob.arrayBuffer());
+  await fetch(`/api/thumb/${meta.id}`, { method: "PUT", body: blob }); return meta;
+}
+const patchVideo = (id, body) => (LOCAL ? L.patch(id, body) : api(`/api/videos/${id}`, body, "PATCH"));
+const deleteVideo = (id) => (LOCAL ? L.del(id) : api(`/api/videos/${id}`, null, "DELETE"));
+async function renderDrive() {
+  const el = $("#drive-st"); if (!el || !LOCAL) return;
+  const s = await D.status(); el.hidden = false;
+  el.innerHTML = s.connected ? `<span class="gd on"></span><span class="gdt">Google Drive<small>${esc(s.email)}</small></span><button class="link" id="gd-x">Déconnecter</button>`
+    : s.configured ? `<span class="gd"></span><span class="gdt">Google Drive<small>non connecté</small></span><button class="link" id="gd-c">Connecter</button>`
+    : `<span class="gd"></span><span class="gdt">Google Drive<small>non configuré</small></span>`;
+  $("#gd-x")?.addEventListener("click", async () => { if (confirm("Déconnecter Google Drive ? Les liens déjà partagés continuent de marcher.")) { await D.disconnect(); renderDrive(); } });
+  $("#gd-c")?.addEventListener("click", async () => { try { await D.connect(); } catch (e) { toast(e.message); } renderDrive(); });
+}
+if (LOCAL) D.onProgress(({ id, f }) => { if (X?.meta?.id === id) setProgress(f, "Envoi sur Google Drive"); });
+async function shareDrive() {
+  if (!X?.meta) return;
+  const s = await D.status();
+  if (!s.configured) { $("#x-err").textContent = "Google Drive n'est pas configuré dans cette version de Reco."; return; }
+  $("#x-err").textContent = ""; $("#x-gshare").disabled = true;
+  try {
+    if (!s.connected) { $("#x-status").textContent = "Connexion à Google… (ton navigateur s'ouvre)"; await D.connect(); renderDrive(); }
+    setProgress(0, "Envoi sur Google Drive");
+    const meta = await D.share(X.meta.id);
+    uploaded(meta, true);
+    await navigator.clipboard.writeText(meta.drive.link).then(() => toast("Lien Google Drive copié"), () => {});
+    $("#x-status").textContent = "✓ Partagée sur Google Drive (Google peut mettre quelques minutes à préparer la lecture)";
+  } catch (err) { $("#x-prog").hidden = true; $("#x-status").textContent = ""; $("#x-err").textContent = err.message; }
+  finally { $("#x-gshare").disabled = false; }
+}
+
 // ───────── connexion & bibliothèque ─────────
 let me = null;
 async function boot() {
   if (!window.recoDesktop) $("#dl-app").hidden = false;
   if (!("MediaStreamTrackProcessor" in window)) document.body.insertAdjacentHTML("afterbegin", '<div class="warn">Pour enregistrer, ouvre Reco dans <b>Chrome</b> ou <b>Edge</b> sur ordinateur.</div>');
+  if (LOCAL) {
+    me = await L.me();
+    $("#shell").hidden = false;
+    $("#ws-name").textContent = `Espace de ${me.name}`;
+    $("#who").innerHTML = `<span class="av">${esc(me.name.slice(0, 1).toUpperCase())}</span><span class="nm">${esc(me.name)}</span><button class="link" id="b-folder" title="${esc(me.folder)}">Dossier</button>`;
+    $("#b-folder").onclick = () => L.openFolder();
+    $('#nav [data-f="all"]').hidden = true;
+    renderDrive();
+    return loadLib();
+  }
   try { me = await api("/api/me"); } catch { me = null; }
   if (!me) { $("#shell").hidden = true; show("v-login"); return; }
   $("#shell").hidden = false;
@@ -72,14 +132,23 @@ $("#f-login").onsubmit = async (e) => {
 };
 
 let lib = [], LF = "mine";
-const isMine = (v) => v.author.toLowerCase() === me.name.toLowerCase();
+const isMine = (v) => LOCAL || v.author.toLowerCase() === me.name.toLowerCase();
 const IC = {
   link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>',
   edit: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>',
   del: '<svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>',
+  share: '<svg viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 13v5.5A1.5 1.5 0 006.5 20h11a1.5 1.5 0 001.5-1.5V13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>',
+  folder: '<svg viewBox="0 0 24 24"><path d="M3.5 7.5A1.5 1.5 0 015 6h4l2 2h8a1.5 1.5 0 011.5 1.5v8A1.5 1.5 0 0119 19H5a1.5 1.5 0 01-1.5-1.5z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>',
 };
 async function loadLib() {
   show("v-lib");
+  if (LOCAL) {
+    lib = await L.list();
+    const used = lib.reduce((s, v) => s + (v.size || 0), 0);
+    $("#quota").textContent = `${fmtSize(used)} sur ton PC`;
+    $("#c-mine").textContent = lib.length;
+    return renderLib();
+  }
   const { videos, used, quota } = await api("/api/videos");
   lib = videos;
   $("#quota").textContent = `${fmtSize(used)} utilisés sur ${fmtSize(quota)}`;
@@ -99,9 +168,9 @@ function renderLib() {
     const dur = (v.trimEnd || v.duration || 0) - (v.trimStart || 0), mine = isMine(v);
     const when = v.updated ? `Modifiée ${ago(v.updated)}` : `Créée ${ago(v.created)}`;
     return `<article class="vc" data-id="${v.id}">
-      <div class="thw"><a href="/v/${v.id}" target="_blank" class="th"><span class="fr"><img src="/t/${v.id}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"></span>${dur > 0 ? `<span class="d">${fmtDur2(dur)}</span>` : ""}</a>
-        <div class="hov"><button data-act="copy" title="Copier le lien">${IC.link}</button>${mine ? `<button data-act="edit" title="Modifier">${IC.edit}</button><button data-act="del" title="Supprimer">${IC.del}</button>` : ""}</div></div>
-      <div class="vi"><b title="${esc(v.title)}">${esc(v.title)}</b><span class="muted">${LF === "all" ? esc(v.author) + " · " : ""}${when}${v.views ? ` · ${v.views} vue${v.views > 1 ? "s" : ""}` : ""}</span></div>
+      <div class="thw"><a ${LOCAL ? 'href="#" data-act="open"' : `href="/v/${v.id}" target="_blank"`} class="th"><span class="fr"><img src="${thumbOf(v)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"></span>${dur > 0 ? `<span class="d">${fmtDur2(dur)}</span>` : ""}</a>
+        <div class="hov">${LOCAL && !v.drive ? `<button data-act="share" title="Partager via Google Drive">${IC.share}</button>` : `<button data-act="copy" title="Copier le lien">${IC.link}</button>`}${LOCAL ? `<button data-act="reveal" title="Afficher dans le dossier">${IC.folder}</button>` : ""}${mine ? `<button data-act="edit" title="Modifier">${IC.edit}</button><button data-act="del" title="Supprimer">${IC.del}</button>` : ""}</div></div>
+      <div class="vi"><b title="${esc(v.title)}">${esc(v.title)}</b><span class="muted">${LF === "all" ? esc(v.author) + " · " : ""}${when}${v.views ? ` · ${v.views} vue${v.views > 1 ? "s" : ""}` : ""}${LOCAL && v.drive ? " · Partagée" : ""}</span></div>
     </article>`;
   }).join("");
 }
@@ -112,9 +181,12 @@ $("#grid").onclick = async (e) => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   e.preventDefault();
   const id = b.closest(".vc").dataset.id;
-  if (b.dataset.act === "copy") { await navigator.clipboard.writeText(`${location.origin}/v/${id}`); toast("Lien copié"); }
-  if (b.dataset.act === "edit") openReview({ meta: lib.find((v) => v.id === id) });
-  if (b.dataset.act === "del" && confirm("Supprimer définitivement cette vidéo ? Le lien ne marchera plus.")) { await api(`/api/videos/${id}`, null, "DELETE"); loadLib(); }
+  const v = lib.find((x) => x.id === id);
+  if (b.dataset.act === "copy") { await navigator.clipboard.writeText(linkOf(v)); toast("Lien copié"); }
+  if (b.dataset.act === "edit" || b.dataset.act === "open") openReview({ meta: v });
+  if (b.dataset.act === "share") { openReview({ meta: v }); shareDrive(); }
+  if (b.dataset.act === "reveal") L.reveal(id);
+  if (b.dataset.act === "del" && confirm(LOCAL ? "Supprimer définitivement cette vidéo de ton PC ?" : "Supprimer définitivement cette vidéo ? Le lien ne marchera plus.")) { await deleteVideo(id); loadLib(); }
 };
 
 // ───────── import d'une vidéo existante (export de Cap, OBS…) ─────────
@@ -126,6 +198,13 @@ $("#f-import").onchange = async (e) => {
   if (!ext) return toast("Formats acceptés : MP4, WebM, MOV");
   const url = URL.createObjectURL(file);
   const info = await probe(url).catch(() => ({ duration: 0, w: null, h: null, thumb: null }));
+  if (LOCAL) { // copie dans le dossier Vidéos/Reco
+    openReview({ localUrl: url, title: file.name.replace(/\.[^.]+$/, ""), duration: info.duration });
+    setProgress(0.5, "Copie dans ton dossier");
+    try { const meta = await L.importFile(file, { title: $("#x-title").value, duration: info.duration, width: info.w, height: info.h }); uploaded(await saveThumb(meta, info.thumb)); }
+    catch (err) { uploadFailed(err); }
+    return;
+  }
   const up = new Uploader(ext);
   openReview({ localUrl: url, title: file.name.replace(/\.[^.]+$/, ""), duration: info.duration }); X.up = up;
   try {
@@ -244,7 +323,7 @@ $("#b-go").onclick = async () => {
   await openPip(); // demande un clic : on l'ouvre tout de suite
   R.mime = pickMime();
   const ext = R.mime.includes("mp4") ? "mp4" : "webm";
-  R.up = await new Uploader(ext).start().catch(() => null); // envoi pendant l'enregistrement (sinon : envoi à la fin)
+  R.up = await new Writer(ext).start().catch(() => null); // serveur : envoi pendant l'enregistrement ; local : écriture sur le disque
   show("v-rec"); $("#rv").srcObject = new MediaStream([R.video]);
   const c = $("#count"); c.hidden = false;
   for (const n of [3, 2, 1]) { c.textContent = n; pipCount(n); await sleep(800); }
@@ -252,7 +331,8 @@ $("#b-go").onclick = async () => {
   R.rec = new MediaRecorder(new MediaStream([R.video, ...(R.audio ? [R.audio] : [])]), { mimeType: R.mime, videoBitsPerSecond: 4_500_000, audioBitsPerSecond: 128_000 });
   R.rec.ondataavailable = (e) => {
     if (!e.data.size) return;
-    if (R.localSize + e.data.size <= LOCAL_MAX) { R.chunks.push(e.data); R.localSize += e.data.size; } else if (R.up) { R.chunks = []; R.localDropped = true; }
+    if (LOCAL && R.up) { R.localDropped = true; R.localSize += e.data.size; } // déjà sur le disque : pas de copie en mémoire
+    else if (R.localSize + e.data.size <= LOCAL_MAX) { R.chunks.push(e.data); R.localSize += e.data.size; } else if (R.up) { R.chunks = []; R.localDropped = true; }
     R.up?.push(e.data);
   };
   R.rec.onstop = onStopped;
@@ -321,13 +401,12 @@ async function onStopped() {
   openReview({ localUrl, title, duration: rec.duration, download: localUrl });
   let up = rec.up; X.up = up;
   try {
-    if (!up) { up = X.up = await new Uploader(type.includes("mp4") ? "mp4" : "webm").start(); up.push(new Blob(rec.chunks, { type })); }
-    const total = up.sent + up.pendingSize;
-    up.onprogress = () => setProgress(up.sent / Math.max(total, 1), "Finalisation de l'envoi");
-    setProgress(up.sent / Math.max(total, 1), "Finalisation de l'envoi");
+    if (!up) { up = X.up = await new Writer(type.includes("mp4") ? "mp4" : "webm").start(); up.push(new Blob(rec.chunks, { type })); }
+    const total = up.sent + up.pendingSize, label = LOCAL ? "Enregistrement sur ton PC" : "Finalisation de l'envoi";
+    up.onprogress = () => setProgress(up.sent / Math.max(total, 1), label);
+    setProgress(up.sent / Math.max(total, 1), label);
     const meta = await up.finish({ title: $("#x-title").value, duration: rec.duration, width: rec.size.w, height: rec.size.h });
-    if (rec.thumb) await fetch(`/api/thumb/${meta.id}`, { method: "PUT", body: rec.thumb });
-    uploaded(meta);
+    uploaded(await saveThumb(meta, rec.thumb));
   } catch (err) { uploadFailed(err, up); }
 }
 
@@ -335,8 +414,9 @@ async function onStopped() {
 let X = null; // vidéo affichée
 function openReview({ meta = null, localUrl = null, title = "", duration = 0, download = null }) {
   show("v-review");
-  X = { meta, duration: meta?.duration || duration || 0, download };
-  $("#xv").src = localUrl || (meta ? `/f/${meta.id}` : "");
+  X = { meta, duration: meta?.duration || duration || 0, download, localUrl };
+  if (localUrl || meta) $("#xv").src = localUrl || fileOf(meta); else $("#xv").removeAttribute("src");
+  $("#x-gshare").hidden = true; $("#x-reveal").hidden = true;
   $("#x-title").value = meta?.title || title;
   $("#x-err").textContent = ""; $("#x-dl").hidden = !download;
   if (meta) uploaded(meta, true); else { $("#x-share").hidden = true; $("#x-trim").hidden = true; $("#x-done").disabled = true; setProgress(0, "Envoi"); }
@@ -347,6 +427,14 @@ function setProgress(f, label) {
 }
 function uploaded(meta, silent) {
   X.meta = meta; X.duration = meta.duration || X.duration;
+  if (LOCAL) {
+    if (!X.localUrl && !$("#xv").getAttribute("src")) $("#xv").src = meta.url;
+    $("#x-prog").hidden = true; $("#x-done").disabled = false; $("#x-trim").hidden = true; $("#x-dl").hidden = true;
+    $("#x-status").textContent = meta.drive ? "✓ Partagée sur Google Drive" : "✓ Enregistrée sur ton PC";
+    $("#x-share").hidden = !meta.drive; $("#x-gshare").hidden = !!meta.drive; $("#x-reveal").hidden = false;
+    if (meta.drive) { $("#x-link").value = meta.drive.link; $("#x-open").href = meta.drive.link; }
+    return;
+  }
   $("#x-prog").hidden = true; $("#x-status").textContent = "✓ Prête à partager";
   const link = `${location.origin}/v/${meta.id}`;
   $("#x-link").value = link; $("#x-open").href = link; $("#x-share").hidden = false; $("#x-done").disabled = false;
@@ -375,15 +463,17 @@ async function saveReview() {
   const d = X.duration, ts = +$("#x-ts").value, te = +$("#x-te").value;
   const body = { title: $("#x-title").value };
   if (d > 1) { body.trimStart = ts > 0.05 ? ts : 0; body.trimEnd = te < d - 0.05 ? te : null; }
-  X.meta = await api(`/api/videos/${X.meta.id}`, body, "PATCH");
+  X.meta = LOCAL ? await L.patch(X.meta.id, { title: body.title }) : await patchVideo(X.meta.id, body);
 }
 $("#x-title").onchange = () => saveReview().catch(() => {});
 $("#x-done").onclick = async () => { try { await saveReview(); } catch (e) { $("#x-err").textContent = e.message; return; } X = null; cleanup(); loadLib(); };
+$("#x-gshare").onclick = () => shareDrive();
+$("#x-reveal").onclick = () => X?.meta && L.reveal(X.meta.id);
 $("#x-copy").onclick = async () => { await saveReview().catch(() => {}); await navigator.clipboard.writeText($("#x-link").value); toast("Lien copié"); };
 $("#x-dl").onclick = () => { const a = document.createElement("a"); a.href = X.download || `/f/${X.meta.id}`; a.download = `${$("#x-title").value || "video"}`; a.click(); };
 $("#x-discard").onclick = async () => {
   if (!confirm("Supprimer cette vidéo ? Le lien ne marchera plus.")) return;
-  if (X?.meta) await api(`/api/videos/${X.meta.id}`, null, "DELETE").catch(() => {}); else X?.up?.abort();
+  if (X?.meta) await deleteVideo(X.meta.id).catch(() => {}); else X?.up?.abort();
   X = null; cleanup(); loadLib();
 };
 
