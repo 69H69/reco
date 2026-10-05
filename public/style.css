@@ -1,3 +1,4 @@
+[hidden] { display: none !important; }
 :root { --bg: #0b0c10; --card: #13151b; --line: rgba(255,255,255,.09); --ink: #f5f3ee; --muted: #9a9aa5; --acc: #ffb547; --red: #ff3b30; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; min-height: 100vh; }
