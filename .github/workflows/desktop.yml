@@ -14,6 +14,7 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: desktop
@@ -33,9 +34,11 @@ jobs:
         run: npx electron-builder --win --publish never
       - name: Vérifier que l'appli démarre (Mac)
         if: runner.os == 'macOS'
+        timeout-minutes: 5
         run: node smoke.mjs "dist/mac-arm64/Reco.app/Contents/MacOS/Reco"
       - name: Vérifier que l'appli démarre (Windows)
         if: runner.os == 'Windows'
+        timeout-minutes: 5
         run: node smoke.mjs "dist/win-unpacked/Reco.exe"
       - uses: actions/upload-artifact@v4
         with:
