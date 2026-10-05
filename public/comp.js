@@ -59,14 +59,15 @@ async function emit() {
         const d = Math.round(H * (cfg.big ? 0.42 : 0.26)), m = Math.round(H * 0.035);
         const x = cfg.corner.includes("r") ? W - d - m : m;
         const y = cfg.corner.includes("t") ? m : H - d - m;
+        // forme : carré aux coins très arrondis (par défaut) ou rond
+        const shape = (inset) => { ctx.beginPath(); if (cfg.shape === "circle") ctx.arc(x + d / 2, y + d / 2, d / 2 - inset, 0, Math.PI * 2); else ctx.roundRect(x + inset, y + inset, d - 2 * inset, d - 2 * inset, d * 0.22); };
         ctx.save();
-        ctx.shadowColor = "rgba(0,0,0,.45)"; ctx.shadowBlur = H * 0.03; ctx.shadowOffsetY = H * 0.008;
-        ctx.beginPath(); ctx.arc(x + d / 2, y + d / 2, d / 2, 0, Math.PI * 2); ctx.fillStyle = "#000"; ctx.fill();
+        ctx.shadowColor = "rgba(0,0,0,.35)"; ctx.shadowBlur = H * 0.035; ctx.shadowOffsetY = H * 0.01;
+        shape(0); ctx.fillStyle = "#000"; ctx.fill();
         ctx.restore();
-        ctx.save(); ctx.beginPath(); ctx.arc(x + d / 2, y + d / 2, d / 2, 0, Math.PI * 2); ctx.clip();
+        ctx.save(); shape(0); ctx.clip();
         drawCover(camFrame, x, y, d, d, true); ctx.restore();
-        ctx.beginPath(); ctx.arc(x + d / 2, y + d / 2, d / 2 - 1, 0, Math.PI * 2);
-        ctx.lineWidth = Math.max(2, H * 0.004); ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.stroke();
+        shape(0.5); ctx.lineWidth = Math.max(1.5, H * 0.0025); ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.stroke();
       }
     }
     const frame = new VideoFrame(canvas, { timestamp: Math.round((performance.now() - t0) * 1000) });

@@ -11,7 +11,7 @@ const ok = (c, m) => { console.log((c ? "OK   " : "ÉCHEC ") + m); if (!c) { pro
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const app = await electron.launch({ args: ["."], cwd: path.dirname(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, "$1")),
-  env: { ...process.env, RECO_TEST: "1", RECO_SERVER: BASE } });
+  env: { ...process.env, RECO_TEST: "1", RECO_SERVER: BASE, RECO_USERDATA: fs.mkdtempSync(path.join(os.tmpdir(), "reco-test-")) } });
 try {
   const pg = await app.firstWindow();
   await pg.waitForSelector("#l-name");

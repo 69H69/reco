@@ -17,7 +17,9 @@
       "output": "dist"
     },
     "files": [
-      "*.js",
+      "main.js",
+      "preload.js",
+      "picker-preload.js",
       "*.html",
       "default-server.json",
       "assets/**"
@@ -33,9 +35,28 @@
       "shortcutName": "Reco"
     },
     "mac": {
-      "target": "dmg",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
       "icon": "assets/icon.png",
-      "category": "public.app-category.video"
+      "category": "public.app-category.video",
+      "identity": null,
+      "hardenedRuntime": false,
+      "artifactName": "Reco-${version}-${arch}.${ext}",
+      "extendInfo": {
+        "NSCameraUsageDescription": "Reco utilise ta caméra pendant l'enregistrement.",
+        "NSMicrophoneUsageDescription": "Reco utilise ton micro pendant l'enregistrement.",
+        "NSScreenCaptureUsageDescription": "Reco enregistre l'écran ou la fenêtre que tu choisis."
+      }
+    },
+    "dmg": {
+      "title": "Reco"
     }
   },
   "devDependencies": {

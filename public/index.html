@@ -57,7 +57,8 @@
       </div>
       <div class="row2">
         <label class="chk" id="lab-sys"><input type="checkbox" id="c-sys" checked> Son de l'ordinateur</label>
-        <div id="lab-corner"><span class="lbl">Position de la bulle</span>
+        <div id="lab-corner"><span class="lbl">Caméra : forme et position</span>
+          <div class="seg" id="shapes"><button data-s="square" class="on">Arrondie</button><button data-s="circle">Ronde</button></div>
           <div class="corners" id="corners"><button data-c="tl">↖</button><button data-c="tr">↗</button><button data-c="bl" class="on">↙</button><button data-c="br">↘</button></div></div>
       </div>
       <div class="actions"><button class="btn ghost" id="b-cancel">Annuler</button><button class="btn big" id="b-prepare">Choisir l'écran et préparer</button></div>
@@ -84,25 +85,31 @@
 
 <!-- Vidéo : envoi, lien, titre, découpe -->
 <section class="view" id="v-review" hidden>
-  <div class="card review">
-    <div class="xhead"><span class="status" id="x-status"></span></div>
-    <div class="prog" id="x-prog" hidden><div id="x-bar"></div></div>
-    <video id="xv" controls playsinline></video>
-    <div class="share" id="x-share" hidden>
-      <input id="x-link" readonly><button class="btn" id="x-copy">Copier le lien</button><a class="btn ghost" id="x-open" target="_blank">Ouvrir</a>
+  <div class="review">
+    <div class="rmain">
+      <video id="xv" controls playsinline></video>
+      <div>
+        <div class="xhead"><span class="status" id="x-status"></span></div>
+        <div class="prog" id="x-prog" hidden><div id="x-bar"></div></div>
+        <div class="share" id="x-share" hidden>
+          <input id="x-link" readonly><button class="btn" id="x-copy">Copier le lien</button><a class="btn ghost" id="x-open" target="_blank">Ouvrir</a>
+        </div>
+      </div>
     </div>
-    <label>Titre<input id="x-title" maxlength="120"></label>
-    <div class="trim" id="x-trim" hidden>
-      <span class="lbl">Découper (le début et la fin sont masqués à la lecture)</span>
-      <div class="tr"><span>Début</span><input type="range" id="x-ts" min="0" value="0"><b id="x-tsl">0:00</b></div>
-      <div class="tr"><span>Fin</span><input type="range" id="x-te" min="0" value="0"><b id="x-tel">0:00</b></div>
-    </div>
-    <div class="actions">
-      <button class="btn ghost" id="x-discard">Supprimer</button>
-      <button class="btn ghost" id="x-dl" hidden>Télécharger</button>
-      <button class="btn big" id="x-done">Terminé</button>
-    </div>
-    <p class="err" id="x-err"></p>
+    <aside class="rside">
+      <label>Titre<input id="x-title" maxlength="120"></label>
+      <div class="trim" id="x-trim" hidden>
+        <span class="lbl">Découper</span>
+        <div class="tr"><span>Début</span><input type="range" id="x-ts" min="0" value="0"><b id="x-tsl">0:00</b></div>
+        <div class="tr"><span>Fin</span><input type="range" id="x-te" min="0" value="0"><b id="x-tel">0:00</b></div>
+        <p class="muted small">Le début et la fin sont masqués à la lecture.</p>
+      </div>
+      <div class="actions">
+        <button class="link danger" id="x-discard">Supprimer</button>
+        <span><button class="btn ghost" id="x-dl" hidden>Télécharger</button> <button class="btn" id="x-done">Terminé</button></span>
+      </div>
+      <p class="err" id="x-err"></p>
+    </aside>
   </div>
 </section>
 

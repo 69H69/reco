@@ -57,7 +57,7 @@ async function boot() {
   if (!("MediaStreamTrackProcessor" in window)) document.body.insertAdjacentHTML("afterbegin", '<div class="warn">Pour enregistrer, ouvre Reco dans <b>Chrome</b> ou <b>Edge</b> sur ordinateur.</div>');
   try { me = await api("/api/me"); } catch { me = null; }
   if (!me) { $("#who").innerHTML = ""; show("v-login"); return; }
-  $("#who").innerHTML = `<span>${esc(me.name)}</span><button class="link" id="b-out">Déconnexion</button>`;
+  $("#who").innerHTML = `<span class="av">${esc(me.name.slice(0, 1).toUpperCase())}</span><span>${esc(me.name)}</span><button class="link" id="b-out">Déconnexion</button>`;
   $("#b-out").onclick = async () => { await api("/api/logout", {}); location.reload(); };
   loadLib();
 }
@@ -125,7 +125,7 @@ function probe(url) { // durée, taille et miniature d'une vidéo locale
 }
 
 // ───────── préparation ─────────
-const S = { mode: "screen+cam", corner: "bl", sys: true };
+const S = { mode: "screen+cam", corner: "bl", sys: true, shape: "square" };
 let R = null; // session d'enregistrement
 
 $("#b-new").onclick = async () => {
@@ -141,9 +141,11 @@ $("#b-cancel").onclick = () => { cleanup(); loadLib(); };
 $("#modes").onclick = (e) => { const b = e.target.closest(".mode"); if (b) { S.mode = b.dataset.mode; refreshSetup(); } };
 $("#corners").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.corner = b.dataset.c; refreshSetup(); R?.worker?.postMessage({ type: "cfg", cfg: { corner: S.corner } }); };
 $("#c-sys").onchange = (e) => (S.sys = e.target.checked);
+$("#shapes").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.shape = b.dataset.s; refreshSetup(); R?.worker?.postMessage({ type: "cfg", cfg: { shape: S.shape } }); };
 function refreshSetup() {
   document.querySelectorAll(".mode").forEach((b) => b.classList.toggle("on", b.dataset.mode === S.mode));
   document.querySelectorAll("#corners button").forEach((b) => b.classList.toggle("on", b.dataset.c === S.corner));
+  document.querySelectorAll("#shapes button").forEach((b) => b.classList.toggle("on", b.dataset.s === S.shape));
   $("#lab-cam").hidden = S.mode === "screen"; $("#lab-sys").hidden = S.mode === "cam"; $("#lab-corner").hidden = S.mode !== "screen+cam";
   $("#b-prepare").textContent = S.mode === "cam" ? "Préparer la caméra" : "Choisir l'écran et préparer";
 }
@@ -191,7 +193,7 @@ $("#b-prepare").onclick = async () => {
   R.size = { w, h };
   R.worker = new Worker("/comp.js");
   const gen = new MediaStreamTrackGenerator({ kind: "video" });
-  const msg = { type: "start", cfg: { w, h, mode: S.mode, corner: S.corner, bubble: true, big: false, hasCam: !!R.cam }, out: gen.writable }, tr = [gen.writable];
+  const msg = { type: "start", cfg: { w, h, mode: S.mode, corner: S.corner, shape: S.shape, bubble: true, big: false, hasCam: !!R.cam }, out: gen.writable }, tr = [gen.writable];
   if (R.display) { msg.screen = new MediaStreamTrackProcessor({ track: R.display.getVideoTracks()[0] }).readable; tr.push(msg.screen); }
   if (R.cam) { msg.cam = new MediaStreamTrackProcessor({ track: R.cam.getVideoTracks()[0] }).readable; tr.push(msg.cam); }
   R.worker.onmessage = (e) => { if (e.data.type === "thumb") R.thumb = e.data.blob; if (e.data.type === "error") console.warn("compositeur", e.data.message); };
@@ -255,13 +257,14 @@ async function openPip() {
     w.document.title = "Reco";
     R.pip = w;
     w.document.head.innerHTML = `<style>
-      body{margin:0;background:#0b0c10;color:#f5f3ee;font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px;box-sizing:border-box;height:100vh}
-      video{width:170px;height:170px;border-radius:50%;object-fit:cover;transform:scaleX(-1);border:3px solid #fff;background:#000}
-      .bar{display:flex;align-items:center;gap:8px;font:600 22px system-ui}.dot{width:10px;height:10px;border-radius:50%;background:#ff3b30}
-      body.paused .dot{background:#ffb547}.btns{display:flex;gap:8px;width:100%}
-      button{flex:1;border:0;border-radius:12px;padding:11px 0;font:600 14px system-ui;cursor:pointer;background:#22252d;color:#fff}
-      button.stop{background:#ff3b30}.mini{display:flex;gap:6px;width:100%}.mini button{padding:6px 0;font-size:12px;background:#16181d}
-      .count{position:fixed;inset:0;display:none;align-items:center;justify-content:center;font:800 90px system-ui;background:rgba(11,12,16,.85)}</style>`;
+      body{margin:0;background:#1c1917;color:#fafaf9;font-family:Inter,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px;box-sizing:border-box;height:100vh}
+      video{width:170px;height:170px;border-radius:${S.shape === "circle" ? "50%" : "38px"};object-fit:cover;transform:scaleX(-1);background:#000;box-shadow:0 0 0 2px rgba(255,255,255,.9)}
+      .bar{display:flex;align-items:center;gap:8px;font:600 22px Inter,system-ui;font-variant-numeric:tabular-nums}.dot{width:10px;height:10px;border-radius:50%;background:#e11d48}
+      body.paused .dot{background:#a8a29e}.btns{display:flex;gap:8px;width:100%}
+      button{flex:1;border:0;border-radius:999px;padding:10px 0;font:600 14px Inter,system-ui;cursor:pointer;background:#44403c;color:#fff}
+      button:hover{background:#57534e}button.stop{background:#e11d48}button.stop:hover{background:#be123c}
+      .mini{display:flex;gap:6px;width:100%}.mini button{padding:6px 0;font-size:12px;background:#292524}
+      .count{position:fixed;inset:0;display:none;align-items:center;justify-content:center;font:700 90px Inter,system-ui;color:#b1aafc;background:rgba(28,25,23,.9)}</style>`;
     w.document.body.innerHTML = `${R.cam ? '<video id="v" autoplay muted playsinline></video>' : ""}
       <div class="bar"><span class="dot"></span><span id="t">0:00</span></div>
       <div class="btns"><button id="p">Pause</button><button class="stop" id="s">Stop</button></div>

@@ -10,6 +10,7 @@ if (TEST) {
   app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
   app.commandLine.appendSwitch("use-fake-device-for-media-stream");
 }
+if (process.env.RECO_USERDATA) app.setPath("userData", process.env.RECO_USERDATA); // profil isolé (tests)
 if (!app.requestSingleInstanceLock()) app.quit();
 
 const ICON = path.join(__dirname, "assets", "icon.png");
@@ -26,7 +27,7 @@ function origin(u) { try { return new URL(u).origin; } catch { return ""; } }
 function createMain() {
   win = new BrowserWindow({
     width: 1280, height: 820, minWidth: 900, minHeight: 600, title: "Reco", icon: ICON,
-    backgroundColor: "#0b0c10", autoHideMenuBar: true, show: false,
+    backgroundColor: "#fdfdfd", autoHideMenuBar: true, show: false,
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.once("ready-to-show", () => win.show());
@@ -37,7 +38,7 @@ function createMain() {
     if (frameName === "reco-pip") {
       return { action: "allow", overrideBrowserWindowOptions: {
         width: 270, height: 350, minWidth: 220, minHeight: 140, alwaysOnTop: true, title: "Reco", icon: ICON,
-        backgroundColor: "#0b0c10", autoHideMenuBar: true, minimizable: false, maximizable: false, fullscreenable: false } };
+        backgroundColor: "#1c1917", autoHideMenuBar: true, minimizable: false, maximizable: false, fullscreenable: false } };
     }
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: "deny" };
@@ -67,7 +68,7 @@ function pickSource(sources) {
     let done = false;
     const finish = (v) => { if (!done) { done = true; resolve(v); } };
     const p = new BrowserWindow({
-      parent: win, modal: true, width: 920, height: 640, title: "Que veux-tu partager ?", icon: ICON, backgroundColor: "#0b0c10",
+      parent: win, modal: true, width: 920, height: 640, title: "Que veux-tu partager ?", icon: ICON, backgroundColor: "#fdfdfd",
       autoHideMenuBar: true, minimizable: false, webPreferences: { preload: path.join(__dirname, "picker-preload.js"), contextIsolation: true, sandbox: true },
     });
     const data = sources.map((s) => ({ id: s.id, name: s.name, screen: s.id.startsWith("screen:"), thumb: s.thumbnail.toDataURL() }));

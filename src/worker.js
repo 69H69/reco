@@ -89,6 +89,8 @@ function playerPage(origin, meta) {
   const date = new Date(meta.created).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
   const d = (meta.trimEnd || meta.duration || 0) - (meta.trimStart || 0);
   const dur = d > 0 ? `${Math.floor(d / 60)}:${String(Math.floor(d % 60)).padStart(2, "0")}` : "";
+  const views = meta.views || 0;
+  const frag = meta.trimStart || meta.trimEnd ? `#t=${meta.trimStart || 0}${meta.trimEnd ? "," + meta.trimEnd : ""}` : "";
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(meta.title)} · Reco</title>
 <meta property="og:type" content="video.other"><meta property="og:title" content="${esc(meta.title)}">
@@ -97,17 +99,23 @@ function playerPage(origin, meta) {
 <meta property="og:video" content="${esc(origin)}/f/${meta.id}"><meta property="og:video:type" content="${esc(meta.contentType)}">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head>
-<body class="player"><main class="pwrap">
-<a class="brand" href="/"><span class="logo"></span>Reco</a>
-<video id="pv" controls playsinline preload="metadata" poster="/t/${meta.id}" src="/f/${meta.id}${meta.trimStart || meta.trimEnd ? `#t=${meta.trimStart || 0}${meta.trimEnd ? "," + meta.trimEnd : ""}` : ""}"></video>
-<div class="pmeta"><div><h1>${esc(meta.title)}</h1><p class="muted">${esc(meta.author)} · ${esc(date)}${dur ? " · " + dur : ""}</p></div>
-<div class="pact"><button class="btn" id="copy">Copier le lien</button><a class="btn ghost" href="/f/${meta.id}" download="${esc(meta.title)}.${meta.ext}">Télécharger</a></div></div>
-</main><script>
+<body class="player">
+<header class="pbar"><a class="brand" href="/"><span class="logo"></span>Reco</a>
+<div class="pact"><a class="btn ghost" href="/f/${meta.id}" download="${esc(meta.title)}.${meta.ext}">Télécharger</a><button class="btn" id="copy">Copier le lien</button></div></header>
+<main class="pwrap">
+<video id="pv" controls playsinline preload="metadata" poster="/t/${meta.id}" src="/f/${meta.id}${frag}"></video>
+<aside class="pside"><h1>${esc(meta.title)}</h1>
+<div class="pauthor"><span class="avatar">${esc((meta.author || "?").slice(0, 1).toUpperCase())}</span><div><b>${esc(meta.author)}</b><br><span class="muted">${esc(date)}</span></div></div>
+<div class="pstats">${dur ? `<span><b>${dur}</b> de vidéo</span>` : ""}<span><b>${views}</b> vue${views > 1 ? "s" : ""}</span></div></aside>
+</main>
+<p class="pfoot">Enregistré avec <a href="/">Reco</a></p>
+<div class="toast" id="toast">Lien copié</div>
+<script>
 const v=document.getElementById("pv"),T0=${Number(meta.trimStart) || 0},T1=${Number(meta.trimEnd) || 0};let counted=false;
 v.addEventListener("loadedmetadata",()=>{if(T0&&v.currentTime<T0)v.currentTime=T0});
 v.addEventListener("timeupdate",()=>{if(T1&&v.currentTime>=T1){v.pause();v.currentTime=T1}if(T0&&v.currentTime<T0-0.3)v.currentTime=T0});
 v.addEventListener("play",()=>{if(T1&&v.currentTime>=T1-0.05)v.currentTime=T0;if(!counted){counted=true;fetch("/api/view/${meta.id}",{method:"POST"}).catch(()=>{})}});
-document.getElementById("copy").onclick=async(e)=>{await navigator.clipboard.writeText(location.href);e.target.textContent="Lien copié ✓";setTimeout(()=>e.target.textContent="Copier le lien",1800)};
+document.getElementById("copy").onclick=async()=>{await navigator.clipboard.writeText(location.href);const t=document.getElementById("toast");t.classList.add("on");setTimeout(()=>t.classList.remove("on"),1800)};
 </script></body></html>`;
 }
 
