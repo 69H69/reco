@@ -17,11 +17,11 @@
 - **Importer** une vidéo existante (MP4, WebM, MOV), par exemple exportée de [Cap](https://github.com/CapSoftware/Cap) ou d'OBS, pour la partager par lien.
 - **Accès par code d'invitation** pour enregistrer ; les liens partagés s'ouvrent sans compte.
 
-| Préparer | Enregistrer | Partager |
+| Préparer | Partager | Page de partage |
 |---|---|---|
-| ![Préparer](docs/setup.png) | ![Enregistrer](docs/recording.png) | ![Partager](docs/share.png) |
+| ![Préparer](docs/setup.png) | ![Partager](docs/share.png) | ![Page de partage](docs/player.png) |
 
-## Appli de bureau (Windows)
+## Appli de bureau (Windows et Mac)
 
 Comme Tella, Reco existe en **appli à installer** (`desktop/`, Electron). Elle ajoute :
 - **son propre sélecteur** d'écran ou de fenêtre, avec miniatures, et le **son de l'ordinateur** capturé directement ;
@@ -35,6 +35,10 @@ cd desktop && npm install && npm run dist          # fabrique dist/Reco-Setup-x.
 npx wrangler r2 object put reco-videos/apps/Reco-Setup.exe --file desktop/dist/Reco-Setup-1.0.0.exe --remote
 ```
 L'installateur n'est pas signé numériquement : au premier lancement, Windows affiche « Windows a protégé votre ordinateur ». Clique sur *Informations complémentaires*, puis sur *Exécuter quand même*.
+
+**Mac** (`Reco-x.y.z-arm64.dmg` pour les Mac Apple Silicon M1 à M4, `x64` pour les Mac Intel) : ouvre le `.dmg` et glisse Reco dans Applications. L'appli n'est pas signée par Apple : au premier lancement, fais un clic droit sur Reco puis *Ouvrir*. Si macOS dit qu'elle est « endommagée », lance `xattr -cr /Applications/Reco.app` dans le Terminal. macOS demande ensuite l'autorisation d'enregistrer l'écran (Réglages Système > Confidentialité et sécurité > Enregistrement de l'écran). Sur Mac, le son de l'ordinateur n'est pas encore capturé (micro uniquement).
+
+**Fabriquer les installateurs** : l'onglet *Actions* du dépôt (workflow « Appli de bureau ») produit le `.dmg` et le `.exe` sur les machines de GitHub et vérifie que l'appli démarre. Pousser un tag `v1.0.1` publie une *release* avec les fichiers.
 
 ## Combien ça coûte ?
 
