@@ -3,7 +3,7 @@
 **Enregistre ton écran et ta caméra, partage la vidéo avec un simple lien. Gratuit, open source, hébergé chez toi.**
 *Record your screen and camera, share it with a link. Free, open source, self-hosted. — English below.*
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/OWNER/reco)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/69H69/reco)
 
 ![Bibliothèque](docs/library.png)
 
@@ -37,7 +37,7 @@ Regarder une vidéo ne coûte rien, quel que soit le nombre de vues. Cloudflare 
 
 ### À la main
 ```bash
-git clone https://github.com/OWNER/reco && cd reco
+git clone https://github.com/69H69/reco && cd reco
 npm install
 npx wrangler login
 npx wrangler r2 bucket create reco-videos
