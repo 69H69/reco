@@ -1,0 +1,4 @@
+# Code à donner à tes potes pour pouvoir enregistrer (choisis-en un long)
+INVITE_CODE=change-moi
+# Longue chaîne aléatoire pour signer les sessions (ex. : openssl rand -base64 48)
+SESSION_SECRET=remplace-par-une-longue-chaine-aleatoire

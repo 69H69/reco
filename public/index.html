@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Reco</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -30,7 +31,11 @@
 <section class="view" id="v-lib" hidden>
   <div class="libhead">
     <div><h1>Vidéos</h1><p class="muted" id="quota"></p></div>
-    <button class="btn big rec-btn" id="b-new"><span class="dot"></span>Nouvel enregistrement</button>
+    <div class="libact">
+      <button class="btn big ghost" id="b-import">Importer une vidéo</button>
+      <button class="btn big rec-btn" id="b-new"><span class="dot"></span>Nouvel enregistrement</button>
+      <input type="file" id="f-import" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" hidden>
+    </div>
   </div>
   <div class="grid" id="grid"></div>
   <p class="muted empty" id="empty" hidden>Aucune vidéo pour l'instant. Lance ton premier enregistrement.</p>
@@ -77,19 +82,25 @@
   <div class="count" id="count" hidden></div>
 </section>
 
-<!-- Relecture / envoi -->
+<!-- Vidéo : envoi, lien, titre, découpe -->
 <section class="view" id="v-review" hidden>
   <div class="card review">
-    <video id="xv" controls playsinline></video>
-    <label>Titre<input id="x-title" maxlength="120"></label>
-    <div class="actions">
-      <button class="btn ghost" id="x-discard">Supprimer</button>
-      <button class="btn ghost" id="x-dl">Télécharger</button>
-      <button class="btn big" id="x-up">Envoyer et obtenir le lien</button>
-    </div>
+    <div class="xhead"><span class="status" id="x-status"></span></div>
     <div class="prog" id="x-prog" hidden><div id="x-bar"></div></div>
+    <video id="xv" controls playsinline></video>
     <div class="share" id="x-share" hidden>
       <input id="x-link" readonly><button class="btn" id="x-copy">Copier le lien</button><a class="btn ghost" id="x-open" target="_blank">Ouvrir</a>
+    </div>
+    <label>Titre<input id="x-title" maxlength="120"></label>
+    <div class="trim" id="x-trim" hidden>
+      <span class="lbl">Découper (le début et la fin sont masqués à la lecture)</span>
+      <div class="tr"><span>Début</span><input type="range" id="x-ts" min="0" value="0"><b id="x-tsl">0:00</b></div>
+      <div class="tr"><span>Fin</span><input type="range" id="x-te" min="0" value="0"><b id="x-tel">0:00</b></div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="x-discard">Supprimer</button>
+      <button class="btn ghost" id="x-dl" hidden>Télécharger</button>
+      <button class="btn big" id="x-done">Terminé</button>
     </div>
     <p class="err" id="x-err"></p>
   </div>

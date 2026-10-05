@@ -2,7 +2,8 @@
 // liens de partage publics (/v/:id), lecture avec support Range (/f/:id), miniatures (/t/:id).
 
 const ID_RE = /^[A-Za-z0-9]{12}$/;
-const TYPES = { mp4: "video/mp4", webm: "video/webm" };
+const TYPES = { mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime" };
+const KEY_RE = /^v\/[A-Za-z0-9]{12}\.(mp4|webm|mov)$/;
 const COOKIE = "reco_session";
 const MAX_PART = 64 * 1024 * 1024;
 const enc = new TextEncoder();
@@ -86,7 +87,8 @@ async function serveObject(req, env, key, contentType) {
 function playerPage(origin, meta) {
   const url = `${origin}/v/${meta.id}`;
   const date = new Date(meta.created).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
-  const dur = meta.duration ? `${Math.floor(meta.duration / 60)}:${String(Math.round(meta.duration % 60)).padStart(2, "0")}` : "";
+  const d = (meta.trimEnd || meta.duration || 0) - (meta.trimStart || 0);
+  const dur = d > 0 ? `${Math.floor(d / 60)}:${String(Math.floor(d % 60)).padStart(2, "0")}` : "";
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(meta.title)} · Reco</title>
 <meta property="og:type" content="video.other"><meta property="og:title" content="${esc(meta.title)}">
@@ -94,13 +96,17 @@ function playerPage(origin, meta) {
 <meta property="og:url" content="${esc(url)}"><meta property="og:image" content="${esc(origin)}/t/${meta.id}">
 <meta property="og:video" content="${esc(origin)}/f/${meta.id}"><meta property="og:video:type" content="${esc(meta.contentType)}">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="stylesheet" href="/style.css"></head>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head>
 <body class="player"><main class="pwrap">
 <a class="brand" href="/"><span class="logo"></span>Reco</a>
-<video id="pv" controls playsinline preload="metadata" poster="/t/${meta.id}" src="/f/${meta.id}"></video>
+<video id="pv" controls playsinline preload="metadata" poster="/t/${meta.id}" src="/f/${meta.id}${meta.trimStart || meta.trimEnd ? `#t=${meta.trimStart || 0}${meta.trimEnd ? "," + meta.trimEnd : ""}` : ""}"></video>
 <div class="pmeta"><div><h1>${esc(meta.title)}</h1><p class="muted">${esc(meta.author)} · ${esc(date)}${dur ? " · " + dur : ""}</p></div>
 <div class="pact"><button class="btn" id="copy">Copier le lien</button><a class="btn ghost" href="/f/${meta.id}" download="${esc(meta.title)}.${meta.ext}">Télécharger</a></div></div>
 </main><script>
+const v=document.getElementById("pv"),T0=${Number(meta.trimStart) || 0},T1=${Number(meta.trimEnd) || 0};let counted=false;
+v.addEventListener("loadedmetadata",()=>{if(T0&&v.currentTime<T0)v.currentTime=T0});
+v.addEventListener("timeupdate",()=>{if(T1&&v.currentTime>=T1){v.pause();v.currentTime=T1}if(T0&&v.currentTime<T0-0.3)v.currentTime=T0});
+v.addEventListener("play",()=>{if(T1&&v.currentTime>=T1-0.05)v.currentTime=T0;if(!counted){counted=true;fetch("/api/view/${meta.id}",{method:"POST"}).catch(()=>{})}});
 document.getElementById("copy").onclick=async(e)=>{await navigator.clipboard.writeText(location.href);e.target.textContent="Lien copié ✓";setTimeout(()=>e.target.textContent="Copier le lien",1800)};
 </script></body></html>`;
 }
@@ -126,6 +132,15 @@ export default {
       const id = p.slice(3);
       if (!ID_RE.test(id)) return new Response("Introuvable", { status: 404 });
       return serveObject(req, env, `t/${id}.jpg`, "image/jpeg");
+    }
+
+    const vw = p.match(/^\/api\/view\/([A-Za-z0-9]{12})$/);
+    if (vw && m === "POST") {
+      const meta = await getMeta(env, vw[1]);
+      if (!meta) return bad("Introuvable.", 404);
+      meta.views = (meta.views || 0) + 1;
+      await env.VIDEOS.put(`m/${meta.id}.json`, JSON.stringify(meta), { httpMetadata: { contentType: "application/json" } });
+      return json({ ok: true });
     }
 
     // ── connexion ──
@@ -162,7 +177,7 @@ export default {
       const key = url.searchParams.get("key") || "";
       const uploadId = url.searchParams.get("uploadId") || "";
       const n = Number(url.searchParams.get("n"));
-      if (!/^v\/[A-Za-z0-9]{12}\.(mp4|webm)$/.test(key) || !uploadId || !(n >= 1 && n <= 10000)) return bad("Paramètres invalides.");
+      if (!KEY_RE.test(key) || !uploadId || !(n >= 1 && n <= 10000)) return bad("Paramètres invalides.");
       const buf = await req.arrayBuffer();
       if (!buf.byteLength || buf.byteLength > MAX_PART) return bad("Morceau trop gros.");
       const part = await env.VIDEOS.resumeMultipartUpload(key, uploadId).uploadPart(n, buf);
@@ -189,7 +204,7 @@ export default {
 
     if (p === "/api/upload/abort" && m === "POST") {
       const b = await req.json().catch(() => ({}));
-      if (/^v\/[A-Za-z0-9]{12}\.(mp4|webm)$/.test(b.key || "") && b.uploadId) await env.VIDEOS.resumeMultipartUpload(b.key, b.uploadId).abort().catch(() => {});
+      if (KEY_RE.test(b.key || "") && b.uploadId) await env.VIDEOS.resumeMultipartUpload(b.key, b.uploadId).abort().catch(() => {});
       return json({ ok: true });
     }
 
@@ -212,16 +227,24 @@ export default {
         cursor = l.truncated ? l.cursor : undefined;
       } while (cursor);
       out.sort((a, b) => b.created - a.created);
-      return json({ videos: out, used: out.reduce((s, v) => s + (v.size || 0), 0), quota: 10 * 1024 ** 3 });
+      return json({ videos: out, used: out.reduce((s, v) => s + (v.size || 0), 0), quota: 10e9 });
     }
 
     const vm = p.match(/^\/api\/videos\/([A-Za-z0-9]{12})$/);
     if (vm) {
       const meta = await getMeta(env, vm[1]);
       if (!meta) return bad("Vidéo inconnue.", 404);
+      if ((m === "PATCH" || m === "DELETE") && meta.author.toLowerCase() !== user.name.toLowerCase()) return bad("Seul l'auteur peut modifier ou supprimer cette vidéo.", 403);
       if (m === "PATCH") {
         const b = await req.json().catch(() => ({}));
         meta.title = String(b.title || meta.title).trim().slice(0, 120) || meta.title;
+        if ("trimStart" in b || "trimEnd" in b) {
+          const d = meta.duration || 6 * 3600;
+          const ts = Math.max(0, Math.min(Number(b.trimStart) || 0, d));
+          const te = b.trimEnd == null ? null : Math.max(ts + 0.5, Math.min(Number(b.trimEnd), d));
+          meta.trimStart = ts > 0 ? Math.round(ts * 10) / 10 : 0;
+          meta.trimEnd = te && te < d ? Math.round(te * 10) / 10 : null;
+        }
         await env.VIDEOS.put(`m/${meta.id}.json`, JSON.stringify(meta), { httpMetadata: { contentType: "application/json" } });
         return json(meta);
       }

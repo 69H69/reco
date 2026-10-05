@@ -61,3 +61,11 @@ body.player { display: flex; justify-content: center; }
 .pmeta { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; flex-wrap: wrap; } .pmeta h1 { font-size: 24px; }
 .pact { display: flex; gap: 10px; }
 @media (max-width: 800px) { .setup, .row2, .modes { grid-template-columns: 1fr; } .libhead { flex-direction: column; align-items: stretch; } }
+
+.libact { display: flex; gap: 10px; flex-wrap: wrap; }
+.xhead { min-height: 24px; margin-bottom: 10px; } .status { color: var(--acc); font-weight: 600; }
+.review .prog { margin: 0 0 14px; }
+.review .share { margin: 16px 0 4px; }
+.trim { margin-top: 16px; } .trim .tr { display: grid; grid-template-columns: 50px 1fr 52px; gap: 12px; align-items: center; margin-top: 6px; }
+.trim input[type=range] { accent-color: var(--acc); padding: 0; } .trim b { font: 600 14px ui-monospace, monospace; text-align: right; }
+.va .btn { white-space: nowrap; }

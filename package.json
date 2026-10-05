@@ -1,0 +1,15 @@
+{
+  "name": "reco",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Enregistre ton écran et ta caméra, partage la vidéo avec un lien. Gratuit et auto-hébergé sur Cloudflare.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "wrangler dev --port 8787 --local",
+    "deploy": "wrangler deploy",
+    "test": "python tests/e2e.py screen+cam 25"
+  },
+  "devDependencies": {
+    "wrangler": "^4.147.0"
+  }
+}

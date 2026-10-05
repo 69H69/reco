@@ -1,10 +1,14 @@
-// Reco — appli d'enregistrement (Chrome / Edge).
+// Reco — appli d'enregistrement (Chrome / Edge sur ordinateur).
 const $ = (s) => document.querySelector(s);
-const show = (id) => { document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== id)); };
+const show = (id) => document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== id));
 const toast = (t) => { const el = $("#toast"); el.textContent = t; el.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("on"), 2200); };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-const fmtSize = (b) => (b > 1e9 ? (b / 1e9).toFixed(2) + " Go" : (b / 1e6).toFixed(0) + " Mo");
-const TEST = new URLSearchParams(location.search).has("fakeScreen"); // tests automatisés
+const fmtSize = (b) => (b >= 1e9 ? `${+(b / 1e9).toFixed(2)} Go`.replace(".", ",") : `${Math.round(b / 1e6)} Mo`);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const TEST = new URLSearchParams(location.search).has("fakeScreen"); // tests automatisés : écran factice
+const PART = 8 * 1024 * 1024;          // taille fixe des morceaux envoyés
+const LOCAL_MAX = 600 * 1024 * 1024;   // au-delà, on ne garde plus de copie locale (la vidéo est déjà en ligne)
 
 async function api(path, body, method) {
   const r = await fetch(path, { method: method || (body ? "POST" : "GET"), headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
@@ -13,89 +17,166 @@ async function api(path, body, method) {
   return d;
 }
 
+// ───────── envoi par morceaux (pendant l'enregistrement ou pour un import) ─────────
+class Uploader {
+  constructor(ext) { this.ext = ext; this.parts = []; this.pending = []; this.pendingSize = 0; this.busy = null; this.n = 0; this.sent = 0; this.aborted = false; }
+  async start() { Object.assign(this, await api("/api/upload/start", { ext: this.ext })); return this; }
+  push(blob) { this.pending.push(blob); this.pendingSize += blob.size; this.pump(); }
+  pump() {
+    if (this.busy || this.aborted || this.pendingSize < PART) return;
+    this.busy = this.sendNext(false).catch((e) => (this.error = e)).finally(() => { this.busy = null; this.pump(); });
+  }
+  async sendNext(last) {
+    const all = new Blob(this.pending), size = last ? all.size : PART;
+    const part = all.slice(0, size), rest = all.slice(size);
+    this.pending = rest.size ? [rest] : []; this.pendingSize = rest.size;
+    const n = ++this.n;
+    for (let a = 0; ; a++) {
+      if (this.aborted) throw new Error("Envoi annulé");
+      try {
+        const r = await fetch(`/api/upload/part?key=${encodeURIComponent(this.key)}&uploadId=${encodeURIComponent(this.uploadId)}&n=${n}`, { method: "PUT", body: part });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Erreur ${r.status}`);
+        this.parts.push(await r.json()); this.sent += part.size; this.onprogress?.(); return;
+      } catch (e) { if (a >= 8) throw e; await sleep(Math.min(15000, 1000 * 2 ** a)); }
+    }
+  }
+  async finish(meta) {
+    while (this.busy) await this.busy;
+    if (this.error) throw this.error;
+    while (this.pendingSize >= PART) await this.sendNext(false);
+    if (this.pendingSize > 0 || !this.parts.length) await this.sendNext(true);
+    return api("/api/upload/complete", { id: this.id, key: this.key, uploadId: this.uploadId, parts: this.parts, ...meta });
+  }
+  abort() { this.aborted = true; if (this.uploadId) api("/api/upload/abort", { key: this.key, uploadId: this.uploadId }).catch(() => {}); }
+}
+
 // ───────── connexion & bibliothèque ─────────
 let me = null;
 async function boot() {
-  if (!("MediaStreamTrackProcessor" in window)) {
-    document.body.insertAdjacentHTML("afterbegin", '<div class="warn">Reco fonctionne sur <b>Chrome</b> ou <b>Edge</b> (ordinateur). Ouvre ce lien dans l\'un des deux.</div>');
-  }
+  if (!("MediaStreamTrackProcessor" in window)) document.body.insertAdjacentHTML("afterbegin", '<div class="warn">Pour enregistrer, ouvre Reco dans <b>Chrome</b> ou <b>Edge</b> sur ordinateur.</div>');
   try { me = await api("/api/me"); } catch { me = null; }
   if (!me) { $("#who").innerHTML = ""; show("v-login"); return; }
-  $("#who").innerHTML = `<span>${escapeHtml(me.name)}</span><button class="link" id="b-out">Déconnexion</button>`;
+  $("#who").innerHTML = `<span>${esc(me.name)}</span><button class="link" id="b-out">Déconnexion</button>`;
   $("#b-out").onclick = async () => { await api("/api/logout", {}); location.reload(); };
   loadLib();
 }
-function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
-
 $("#f-login").onsubmit = async (e) => {
   e.preventDefault(); $("#l-err").textContent = "";
-  try { await api("/api/login", { name: $("#l-name").value, code: $("#l-code").value }); boot(); }
-  catch (err) { $("#l-err").textContent = err.message; }
+  try { await api("/api/login", { name: $("#l-name").value, code: $("#l-code").value }); boot(); } catch (err) { $("#l-err").textContent = err.message; }
 };
 
+let lib = [];
 async function loadLib() {
   show("v-lib");
   const { videos, used, quota } = await api("/api/videos");
+  lib = videos;
   $("#quota").textContent = `${videos.length} vidéo${videos.length > 1 ? "s" : ""} · ${fmtSize(used)} utilisés sur ${fmtSize(quota)} gratuits`;
   $("#empty").hidden = videos.length > 0;
-  $("#grid").innerHTML = videos.map((v) => `
-    <article class="vc" data-id="${v.id}">
-      <a href="/v/${v.id}" target="_blank" class="th"><img src="/t/${v.id}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="d">${v.duration ? fmtDur(v.duration) : ""}</span></a>
-      <div class="vi"><b title="${escapeHtml(v.title)}">${escapeHtml(v.title)}</b><span class="muted">${escapeHtml(v.author)} · ${new Date(v.created).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}</span></div>
-      <div class="va"><button class="btn small" data-act="copy">Copier le lien</button><button class="link" data-act="rename">Renommer</button><button class="link danger" data-act="del">Supprimer</button></div>
-    </article>`).join("");
+  $("#grid").innerHTML = videos.map((v) => {
+    const mine = v.author.toLowerCase() === me.name.toLowerCase();
+    const dur = (v.trimEnd || v.duration || 0) - (v.trimStart || 0);
+    return `<article class="vc" data-id="${v.id}">
+      <a href="/v/${v.id}" target="_blank" class="th"><img src="/t/${v.id}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="d">${dur > 0 ? fmtDur(dur) : ""}</span></a>
+      <div class="vi"><b title="${esc(v.title)}">${esc(v.title)}</b><span class="muted">${esc(v.author)} · ${new Date(v.created).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} · ${v.views || 0} vue${(v.views || 0) > 1 ? "s" : ""}</span></div>
+      <div class="va"><button class="btn small" data-act="copy">Copier le lien</button>${mine ? '<button class="link" data-act="edit">Modifier</button><button class="link danger" data-act="del">Supprimer</button>' : ""}</div>
+    </article>`;
+  }).join("");
 }
 $("#grid").onclick = async (e) => {
   const b = e.target.closest("[data-act]"); if (!b) return;
-  const id = b.closest(".vc").dataset.id, link = `${location.origin}/v/${id}`;
-  if (b.dataset.act === "copy") { await navigator.clipboard.writeText(link); toast("Lien copié ✓"); }
-  if (b.dataset.act === "rename") { const t = prompt("Nouveau titre"); if (t) { await api(`/api/videos/${id}`, { title: t }, "PATCH"); loadLib(); } }
+  const id = b.closest(".vc").dataset.id;
+  if (b.dataset.act === "copy") { await navigator.clipboard.writeText(`${location.origin}/v/${id}`); toast("Lien copié ✓"); }
+  if (b.dataset.act === "edit") openReview({ meta: lib.find((v) => v.id === id) });
   if (b.dataset.act === "del" && confirm("Supprimer définitivement cette vidéo ? Le lien ne marchera plus.")) { await api(`/api/videos/${id}`, null, "DELETE"); loadLib(); }
 };
 
+// ───────── import d'une vidéo existante (export de Cap, OBS…) ─────────
+$("#b-import").onclick = () => $("#f-import").click();
+$("#f-import").onchange = async (e) => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  const ext = { "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov" }[file.type] || (file.name.match(/\.(mp4|webm|mov)$/i) || [])[1]?.toLowerCase();
+  if (!ext) return toast("Formats acceptés : MP4, WebM, MOV");
+  const url = URL.createObjectURL(file);
+  const info = await probe(url).catch(() => ({ duration: 0, w: null, h: null, thumb: null }));
+  const up = new Uploader(ext);
+  openReview({ localUrl: url, title: file.name.replace(/\.[^.]+$/, ""), duration: info.duration }); X.up = up;
+  try {
+    await up.start();
+    up.onprogress = () => setProgress(up.sent / file.size, "Envoi");
+    up.push(file);
+    const meta = await up.finish({ title: $("#x-title").value, duration: info.duration, width: info.w, height: info.h });
+    if (info.thumb) await fetch(`/api/thumb/${meta.id}`, { method: "PUT", body: info.thumb });
+    uploaded(meta);
+  } catch (err) { uploadFailed(err, up); }
+};
+function probe(url) { // durée, taille et miniature d'une vidéo locale
+  return new Promise((ok, ko) => {
+    const v = document.createElement("video"); v.muted = true; v.preload = "auto"; v.src = url;
+    v.onerror = () => ko(new Error("vidéo illisible"));
+    v.onloadedmetadata = () => { v.currentTime = Math.min(1, (v.duration || 2) / 3); };
+    v.onseeked = () => {
+      const c = document.createElement("canvas"); c.width = 640; c.height = Math.round(640 * v.videoHeight / v.videoWidth) || 360;
+      c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+      c.toBlob((b) => ok({ duration: isFinite(v.duration) ? v.duration : 0, w: v.videoWidth, h: v.videoHeight, thumb: b }), "image/jpeg", 0.82);
+    };
+  });
+}
+
 // ───────── préparation ─────────
 const S = { mode: "screen+cam", corner: "bl", sys: true };
-let R = null; // session d'enregistrement en cours
+let R = null; // session d'enregistrement
 
 $("#b-new").onclick = async () => {
   show("v-setup"); $("#s-err").textContent = ""; $("#b-go").hidden = true; $("#pip-hint").hidden = true; $("#prev-hint").hidden = false;
-  try { // permission pour obtenir les noms des appareils
-    const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }).catch(() => navigator.mediaDevices.getUserMedia({ audio: true }));
-    tmp.getTracks().forEach((t) => t.stop());
-  } catch { /* l'utilisateur pourra choisir « aucun » */ }
+  try { const t = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }).catch(() => navigator.mediaDevices.getUserMedia({ audio: true })); t.getTracks().forEach((x) => x.stop()); } catch {}
   const devs = await navigator.mediaDevices.enumerateDevices();
-  const opt = (d, i, k) => `<option value="${d.deviceId}">${escapeHtml(d.label || `${k} ${i + 1}`)}</option>`;
+  const opt = (d, i, k) => `<option value="${d.deviceId}">${esc(d.label || `${k} ${i + 1}`)}</option>`;
   $("#s-cam").innerHTML = devs.filter((d) => d.kind === "videoinput").map((d, i) => opt(d, i, "Caméra")).join("");
   $("#s-mic").innerHTML = devs.filter((d) => d.kind === "audioinput").map((d, i) => opt(d, i, "Micro")).join("") + '<option value="none">Aucun micro</option>';
   refreshSetup();
 };
 $("#b-cancel").onclick = () => { cleanup(); loadLib(); };
-$("#modes").onclick = (e) => { const b = e.target.closest(".mode"); if (!b) return; S.mode = b.dataset.mode; refreshSetup(); };
+$("#modes").onclick = (e) => { const b = e.target.closest(".mode"); if (b) { S.mode = b.dataset.mode; refreshSetup(); } };
 $("#corners").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.corner = b.dataset.c; refreshSetup(); R?.worker?.postMessage({ type: "cfg", cfg: { corner: S.corner } }); };
 $("#c-sys").onchange = (e) => (S.sys = e.target.checked);
 function refreshSetup() {
   document.querySelectorAll(".mode").forEach((b) => b.classList.toggle("on", b.dataset.mode === S.mode));
   document.querySelectorAll("#corners button").forEach((b) => b.classList.toggle("on", b.dataset.c === S.corner));
-  $("#lab-cam").hidden = S.mode === "screen";
-  $("#lab-sys").hidden = S.mode === "cam";
-  $("#lab-corner").hidden = S.mode !== "screen+cam";
+  $("#lab-cam").hidden = S.mode === "screen"; $("#lab-sys").hidden = S.mode === "cam"; $("#lab-corner").hidden = S.mode !== "screen+cam";
   $("#b-prepare").textContent = S.mode === "cam" ? "Préparer la caméra" : "Choisir l'écran et préparer";
 }
-
-function fakeScreen() { // écran factice animé (tests)
+function fakeScreen() {
+  if (new URLSearchParams(location.search).get("fakeScreen") === "demo") return demoScreen();
   const c = document.createElement("canvas"); c.width = 1920; c.height = 1080; const g = c.getContext("2d"); let n = 0;
-  (function loop() { n++; g.fillStyle = `hsl(${n % 360},60%,40%)`; g.fillRect(0, 0, 1920, 1080); g.fillStyle = "#fff"; g.font = "bold 120px sans-serif"; g.fillText(`ÉCRAN TEST ${n}`, 200, 560); requestAnimationFrame(loop); })();
+  (function loop() { // contenu chargé (bruit) pour un débit réaliste
+    n++; g.fillStyle = `hsl(${n % 360},60%,40%)`; g.fillRect(0, 0, 1920, 1080);
+    for (let i = 0; i < 400; i++) { g.fillStyle = `hsl(${(i * 37 + n * 7) % 360},70%,${30 + ((i * 13 + n) % 40)}%)`; g.fillRect((i * 97 + n * 13) % 1920, (i * 53 + n * 7) % 1080, 60, 40); }
+    g.fillStyle = "#fff"; g.font = "bold 120px sans-serif"; g.fillText(`ÉCRAN TEST ${n}`, 200, 560); requestAnimationFrame(loop); })();
+  return c.captureStream(30);
+}
+
+function demoScreen() { // faux écran présentable (captures du README)
+  const c = document.createElement("canvas"); c.width = 1920; c.height = 1080; const g = c.getContext("2d"); let n = 0;
+  (function loop() {
+    n++; const gr = g.createLinearGradient(0, 0, 1920, 1080); gr.addColorStop(0, "#1c2340"); gr.addColorStop(1, "#3b1d4a"); g.fillStyle = gr; g.fillRect(0, 0, 1920, 1080);
+    g.fillStyle = "rgba(255,255,255,.06)"; g.fillRect(0, 0, 1920, 70); g.fillStyle = "#fff"; g.font = "600 30px system-ui"; g.fillText("Tableau de bord", 60, 46);
+    g.font = "800 92px system-ui"; g.fillText("Lancement de la v2", 120, 260);
+    g.font = "400 38px system-ui"; g.fillStyle = "rgba(255,255,255,.75)"; g.fillText("Ce qui change, en 3 minutes", 124, 330);
+    [["Inscriptions", "+38 %"], ["Rétention", "92 %"], ["Temps de chargement", "0,8 s"]].forEach(([k, v], i) => {
+      const x = 120 + i * 560; g.fillStyle = "rgba(255,255,255,.08)"; g.fillRect(x, 420, 500, 260); g.fillStyle = "rgba(255,255,255,.7)"; g.font = "500 32px system-ui"; g.fillText(k, x + 40, 490);
+      g.fillStyle = "#ffb547"; g.font = "800 96px system-ui"; g.fillText(v, x + 40, 610); });
+    g.strokeStyle = "#ffb547"; g.lineWidth = 6; g.beginPath(); for (let i = 0; i <= 60; i++) { const x = 120 + i * 28, y = 900 - 120 * Math.sin((i + n / 6) / 9) - i * 2; i ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke();
+    requestAnimationFrame(loop); })();
   return c.captureStream(30);
 }
 
 $("#b-prepare").onclick = async () => {
-  $("#s-err").textContent = "";
-  cleanup();
-  R = { chunks: [], paused: false, pausedMs: 0 };
+  $("#s-err").textContent = ""; cleanup();
+  R = { chunks: [], localSize: 0, paused: false, pausedMs: 0 };
   try {
     if (S.mode !== "cam") {
-      R.display = TEST ? fakeScreen() : await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: 30, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: S.sys, selfBrowserSurface: "exclude", surfaceSwitching: "include", systemAudio: "include" });
+      R.display = TEST ? fakeScreen() : await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: S.sys, selfBrowserSurface: "exclude", surfaceSwitching: "include", systemAudio: "include" });
       R.display.getVideoTracks()[0].addEventListener("ended", () => { if (R?.rec && R.rec.state !== "inactive") stopRec(); });
     }
     if (S.mode !== "screen") R.cam = await navigator.mediaDevices.getUserMedia({ video: { deviceId: $("#s-cam").value ? { exact: $("#s-cam").value } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } });
@@ -104,27 +185,20 @@ $("#b-prepare").onclick = async () => {
     $("#s-err").textContent = err.name === "NotAllowedError" ? "Partage refusé. Réessaie et autorise l'écran, la caméra ou le micro." : `Impossible de démarrer : ${err.message}`;
     cleanup(); return;
   }
-  // taille de sortie : celle de l'écran, plafonnée à 1920x1080 ; caméra seule : 1280x720
   let w = 1280, h = 720;
   if (R.display) { const st = R.display.getVideoTracks()[0].getSettings(); const s = Math.min(1, 1920 / (st.width || 1920), 1080 / (st.height || 1080)); w = Math.round((st.width || 1920) * s / 2) * 2; h = Math.round((st.height || 1080) * s / 2) * 2; }
   R.size = { w, h };
-  // compositeur
   R.worker = new Worker("/comp.js");
   const gen = new MediaStreamTrackGenerator({ kind: "video" });
-  const msg = { type: "start", cfg: { w, h, mode: S.mode, corner: S.corner, bubble: true, big: false, hasCam: !!R.cam }, out: gen.writable };
-  const tr = [gen.writable];
+  const msg = { type: "start", cfg: { w, h, mode: S.mode, corner: S.corner, bubble: true, big: false, hasCam: !!R.cam }, out: gen.writable }, tr = [gen.writable];
   if (R.display) { msg.screen = new MediaStreamTrackProcessor({ track: R.display.getVideoTracks()[0] }).readable; tr.push(msg.screen); }
   if (R.cam) { msg.cam = new MediaStreamTrackProcessor({ track: R.cam.getVideoTracks()[0] }).readable; tr.push(msg.cam); }
   R.worker.onmessage = (e) => { if (e.data.type === "thumb") R.thumb = e.data.blob; if (e.data.type === "error") console.warn("compositeur", e.data.message); };
   R.worker.postMessage(msg, tr);
   R.video = gen;
-  // audio : micro + son de l'ordinateur mixés
   const aTracks = [...(R.mic?.getAudioTracks() || []), ...(R.display?.getAudioTracks() || [])];
-  if (aTracks.length > 1) {
-    R.ac = new AudioContext(); const dst = R.ac.createMediaStreamDestination();
-    aTracks.forEach((t) => R.ac.createMediaStreamSource(new MediaStream([t])).connect(dst));
-    R.audio = dst.stream.getAudioTracks()[0];
-  } else R.audio = aTracks[0] || null;
+  if (aTracks.length > 1) { R.ac = new AudioContext(); const dst = R.ac.createMediaStreamDestination(); aTracks.forEach((t) => R.ac.createMediaStreamSource(new MediaStream([t])).connect(dst)); R.audio = dst.stream.getAudioTracks()[0]; }
+  else R.audio = aTracks[0] || null;
   $("#pv").srcObject = new MediaStream([gen]);
   $("#prev-hint").hidden = true; $("#b-go").hidden = false; $("#pip-hint").hidden = !("documentPictureInPicture" in window);
 };
@@ -138,15 +212,20 @@ function pickMime() {
 const elapsed = () => { if (!R?.t0) return 0; const now = R.paused ? R.pauseAt : performance.now(); return (now - R.t0 - R.pausedMs) / 1000; };
 
 $("#b-go").onclick = async () => {
-  await openPip(); // nécessite le clic : on l'ouvre tout de suite
+  await openPip(); // demande un clic : on l'ouvre tout de suite
+  R.mime = pickMime();
+  const ext = R.mime.includes("mp4") ? "mp4" : "webm";
+  R.up = await new Uploader(ext).start().catch(() => null); // envoi pendant l'enregistrement (sinon : envoi à la fin)
   show("v-rec"); $("#rv").srcObject = new MediaStream([R.video]);
   const c = $("#count"); c.hidden = false;
-  for (const n of [3, 2, 1]) { c.textContent = n; pipCount(n); await new Promise((r) => setTimeout(r, 800)); }
+  for (const n of [3, 2, 1]) { c.textContent = n; pipCount(n); await sleep(800); }
   c.hidden = true; pipCount(null);
-  const stream = new MediaStream([R.video, ...(R.audio ? [R.audio] : [])]);
-  R.mime = pickMime();
-  R.rec = new MediaRecorder(stream, { mimeType: R.mime, videoBitsPerSecond: 4_500_000, audioBitsPerSecond: 128_000 });
-  R.rec.ondataavailable = (e) => e.data.size && R.chunks.push(e.data);
+  R.rec = new MediaRecorder(new MediaStream([R.video, ...(R.audio ? [R.audio] : [])]), { mimeType: R.mime, videoBitsPerSecond: 4_500_000, audioBitsPerSecond: 128_000 });
+  R.rec.ondataavailable = (e) => {
+    if (!e.data.size) return;
+    if (R.localSize + e.data.size <= LOCAL_MAX) { R.chunks.push(e.data); R.localSize += e.data.size; } else if (R.up) { R.chunks = []; R.localDropped = true; }
+    R.up?.push(e.data);
+  };
   R.rec.onstop = onStopped;
   R.rec.start(1000); R.t0 = performance.now();
   R.tick = setInterval(tick, 250); tick();
@@ -192,64 +271,92 @@ async function openPip() {
       w.document.getElementById("sz").onclick = (e) => { big = !big; e.target.textContent = big ? "Petite bulle" : "Grande bulle"; send({ big }); };
       w.document.getElementById("mv").onclick = () => { S.corner = order[(order.indexOf(S.corner) + 1) % 4]; send({ corner: S.corner }); };
     }
-    w.addEventListener("pagehide", () => { R && (R.pip = null); });
-  } catch (err) { console.warn("PiP indisponible", err); }
+    w.addEventListener("pagehide", () => { if (R) R.pip = null; });
+  } catch (err) { console.warn("Mini-fenêtre indisponible", err); }
 }
-function pipCount(n) { const c = R?.pip?.document.getElementById("c"); if (!c) return; c.style.display = n ? "flex" : "none"; c.textContent = n || ""; }
+function pipCount(n) { const c = R?.pip?.document.getElementById("c"); if (c) { c.style.display = n ? "flex" : "none"; c.textContent = n || ""; } }
 
-// ───────── relecture & envoi ─────────
-function onStopped() {
-  clearInterval(R.tick);
-  R.blob = new Blob(R.chunks, { type: R.mime.split(";")[0] || "video/webm" });
-  R.pip?.close();
-  stopTracks();
-  show("v-review");
-  $("#xv").src = URL.createObjectURL(R.blob);
-  $("#x-title").value = `Enregistrement du ${new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} à ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
-  $("#x-share").hidden = true; $("#x-prog").hidden = true; $("#x-err").textContent = ""; $("#x-up").disabled = false;
-}
-$("#x-dl").onclick = () => { const a = document.createElement("a"); a.href = $("#xv").src; a.download = `${$("#x-title").value || "enregistrement"}.${R.blob.type.includes("mp4") ? "mp4" : "webm"}`; a.click(); };
-$("#x-discard").onclick = () => { if (confirm("Supprimer cet enregistrement sans l'envoyer ?")) { cleanup(); loadLib(); } };
-$("#x-up").onclick = async () => {
-  $("#x-up").disabled = true; $("#x-err").textContent = ""; $("#x-prog").hidden = false;
-  const bar = $("#x-bar"), blob = R.blob, ext = blob.type.includes("mp4") ? "mp4" : "webm";
-  let s;
+// ───────── fin d'enregistrement : finalisation de l'envoi ─────────
+async function onStopped() {
+  clearInterval(R.tick); R.pip?.close(); stopTracks();
+  const type = R.mime.split(";")[0] || "video/webm", rec = R;
+  const localUrl = rec.localDropped ? null : URL.createObjectURL(new Blob(rec.chunks, { type }));
+  const title = `Enregistrement du ${new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} à ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+  openReview({ localUrl, title, duration: rec.duration, download: localUrl });
+  let up = rec.up; X.up = up;
   try {
-    s = await api("/api/upload/start", { ext });
-    const CH = 8 * 1024 * 1024, parts = [], n = Math.max(1, Math.ceil(blob.size / CH));
-    for (let i = 0; i < n; i++) {
-      let ok = false, last;
-      for (let a = 0; a < 3 && !ok; a++) {
-        try {
-          const r = await fetch(`/api/upload/part?key=${encodeURIComponent(s.key)}&uploadId=${encodeURIComponent(s.uploadId)}&n=${i + 1}`, { method: "PUT", body: blob.slice(i * CH, (i + 1) * CH) });
-          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Erreur ${r.status}`);
-          parts.push(await r.json()); ok = true;
-        } catch (err) { last = err; await new Promise((r) => setTimeout(r, 1000 * (a + 1))); }
-      }
-      if (!ok) throw last;
-      bar.style.width = `${Math.round(((i + 1) / n) * 95)}%`;
-    }
-    const meta = await api("/api/upload/complete", { id: s.id, key: s.key, uploadId: s.uploadId, parts, title: $("#x-title").value, duration: R.duration, width: R.size.w, height: R.size.h });
-    if (R.thumb) await fetch(`/api/thumb/${meta.id}`, { method: "PUT", body: R.thumb });
-    bar.style.width = "100%";
-    const link = `${location.origin}/v/${meta.id}`;
-    $("#x-link").value = link; $("#x-open").href = link; $("#x-share").hidden = false;
-    await navigator.clipboard.writeText(link).then(() => toast("Lien copié ✓"), () => {});
-  } catch (err) {
-    $("#x-err").textContent = `Envoi impossible : ${err.message}. Ta vidéo est toujours là, réessaie ou télécharge-la.`;
-    $("#x-up").disabled = false;
-    if (s) api("/api/upload/abort", { key: s.key, uploadId: s.uploadId }).catch(() => {});
-  }
+    if (!up) { up = X.up = await new Uploader(type.includes("mp4") ? "mp4" : "webm").start(); up.push(new Blob(rec.chunks, { type })); }
+    const total = up.sent + up.pendingSize;
+    up.onprogress = () => setProgress(up.sent / Math.max(total, 1), "Finalisation de l'envoi");
+    setProgress(up.sent / Math.max(total, 1), "Finalisation de l'envoi");
+    const meta = await up.finish({ title: $("#x-title").value, duration: rec.duration, width: rec.size.w, height: rec.size.h });
+    if (rec.thumb) await fetch(`/api/thumb/${meta.id}`, { method: "PUT", body: rec.thumb });
+    uploaded(meta);
+  } catch (err) { uploadFailed(err, up); }
+}
+
+// ───────── écran « vidéo » : envoi, lien, titre, découpe ─────────
+let X = null; // vidéo affichée
+function openReview({ meta = null, localUrl = null, title = "", duration = 0, download = null }) {
+  show("v-review");
+  X = { meta, duration: meta?.duration || duration || 0, download };
+  $("#xv").src = localUrl || (meta ? `/f/${meta.id}` : "");
+  $("#x-title").value = meta?.title || title;
+  $("#x-err").textContent = ""; $("#x-dl").hidden = !download;
+  if (meta) uploaded(meta, true); else { $("#x-share").hidden = true; $("#x-trim").hidden = true; $("#x-done").disabled = true; setProgress(0, "Envoi"); }
+}
+function setProgress(f, label) {
+  $("#x-prog").hidden = false; $("#x-bar").style.width = `${Math.round(Math.min(1, f) * 100)}%`;
+  $("#x-status").textContent = `${label}… ${Math.round(Math.min(1, f) * 100)} %`;
+}
+function uploaded(meta, silent) {
+  X.meta = meta; X.duration = meta.duration || X.duration;
+  $("#x-prog").hidden = true; $("#x-status").textContent = "✓ Prête à partager";
+  const link = `${location.origin}/v/${meta.id}`;
+  $("#x-link").value = link; $("#x-open").href = link; $("#x-share").hidden = false; $("#x-done").disabled = false;
+  if (!X.download) $("#x-dl").hidden = false;
+  setupTrim(meta);
+  if (!silent) navigator.clipboard.writeText(link).then(() => toast("Lien copié ✓"), () => {});
+}
+function uploadFailed(err, up) {
+  $("#x-status").textContent = ""; $("#x-prog").hidden = true;
+  $("#x-err").textContent = `Envoi impossible : ${err.message}. ${X.download ? "Télécharge la vidéo pour ne pas la perdre." : ""}`;
+  $("#x-dl").hidden = !X.download; $("#x-done").disabled = false; up?.abort();
+}
+function setupTrim(meta) {
+  const d = X.duration; $("#x-trim").hidden = !(d > 1);
+  if (!(d > 1)) return;
+  const ts = $("#x-ts"), te = $("#x-te");
+  ts.max = te.max = d.toFixed(1); ts.step = te.step = "0.1";
+  ts.value = meta.trimStart || 0; te.value = meta.trimEnd || d;
+  const upd = () => { if (+ts.value > +te.value - 0.5) ts.value = Math.max(0, +te.value - 0.5); $("#x-tsl").textContent = fmtDur(+ts.value); $("#x-tel").textContent = fmtDur(+te.value); };
+  ts.oninput = () => { upd(); $("#xv").currentTime = +ts.value; };
+  te.oninput = () => { upd(); $("#xv").currentTime = +te.value; };
+  upd();
+}
+async function saveReview() {
+  if (!X?.meta) return;
+  const d = X.duration, ts = +$("#x-ts").value, te = +$("#x-te").value;
+  const body = { title: $("#x-title").value };
+  if (d > 1) { body.trimStart = ts > 0.05 ? ts : 0; body.trimEnd = te < d - 0.05 ? te : null; }
+  X.meta = await api(`/api/videos/${X.meta.id}`, body, "PATCH");
+}
+$("#x-title").onchange = () => saveReview().catch(() => {});
+$("#x-done").onclick = async () => { try { await saveReview(); } catch (e) { $("#x-err").textContent = e.message; return; } X = null; cleanup(); loadLib(); };
+$("#x-copy").onclick = async () => { await saveReview().catch(() => {}); await navigator.clipboard.writeText($("#x-link").value); toast("Lien copié ✓"); };
+$("#x-dl").onclick = () => { const a = document.createElement("a"); a.href = X.download || `/f/${X.meta.id}`; a.download = `${$("#x-title").value || "video"}`; a.click(); };
+$("#x-discard").onclick = async () => {
+  if (!confirm("Supprimer cette vidéo ? Le lien ne marchera plus.")) return;
+  if (X?.meta) await api(`/api/videos/${X.meta.id}`, null, "DELETE").catch(() => {}); else X?.up?.abort();
+  X = null; cleanup(); loadLib();
 };
-$("#x-copy").onclick = async () => { await navigator.clipboard.writeText($("#x-link").value); toast("Lien copié ✓"); };
 
 function stopTracks() {
-  R?.worker?.postMessage({ type: "stop" });
-  setTimeout(() => R?.worker?.terminate(), 500);
+  R?.worker?.postMessage({ type: "stop" }); const w = R?.worker; setTimeout(() => w?.terminate(), 500);
   [R?.display, R?.cam, R?.mic].forEach((s) => s?.getTracks().forEach((t) => t.stop()));
   R?.video?.stop?.(); R?.ac?.close?.();
 }
 function cleanup() { if (R) { clearInterval(R.tick); R.pip?.close(); stopTracks(); } R = null; $("#pv").srcObject = null; }
-window.addEventListener("beforeunload", (e) => { if (R?.rec && R.rec.state !== "inactive") { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", (e) => { if ((R?.rec && R.rec.state !== "inactive") || (X && !X.meta)) { e.preventDefault(); e.returnValue = ""; } });
 
 boot();
