@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reco</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/"><span class="logo"></span>Reco</a>
+  <div class="who" id="who"></div>
+</header>
+
+<!-- Connexion -->
+<section class="view" id="v-login" hidden>
+  <div class="card narrow">
+    <h1>Bienvenue</h1>
+    <p class="muted">Entre ton prénom et le code d'invitation.</p>
+    <form id="f-login">
+      <label>Prénom<input id="l-name" autocomplete="given-name" maxlength="40" required></label>
+      <label>Code d'invitation<input id="l-code" type="password" required></label>
+      <button class="btn big" type="submit">Entrer</button>
+      <p class="err" id="l-err"></p>
+    </form>
+  </div>
+</section>
+
+<!-- Bibliothèque -->
+<section class="view" id="v-lib" hidden>
+  <div class="libhead">
+    <div><h1>Vidéos</h1><p class="muted" id="quota"></p></div>
+    <button class="btn big rec-btn" id="b-new"><span class="dot"></span>Nouvel enregistrement</button>
+  </div>
+  <div class="grid" id="grid"></div>
+  <p class="muted empty" id="empty" hidden>Aucune vidéo pour l'instant. Lance ton premier enregistrement.</p>
+</section>
+
+<!-- Préparation -->
+<section class="view" id="v-setup" hidden>
+  <div class="setup">
+    <div class="card">
+      <h2>Que veux-tu enregistrer ?</h2>
+      <div class="modes" id="modes">
+        <button class="mode on" data-mode="screen+cam"><b>Écran + caméra</b><span>Ta tête dans une bulle</span></button>
+        <button class="mode" data-mode="screen"><b>Écran seul</b><span>Sans caméra</span></button>
+        <button class="mode" data-mode="cam"><b>Caméra seule</b><span>Face caméra</span></button>
+      </div>
+      <div class="row2">
+        <label id="lab-cam">Caméra<select id="s-cam"></select></label>
+        <label>Micro<select id="s-mic"></select></label>
+      </div>
+      <div class="row2">
+        <label class="chk" id="lab-sys"><input type="checkbox" id="c-sys" checked> Son de l'ordinateur</label>
+        <div id="lab-corner"><span class="lbl">Position de la bulle</span>
+          <div class="corners" id="corners"><button data-c="tl">↖</button><button data-c="tr">↗</button><button data-c="bl" class="on">↙</button><button data-c="br">↘</button></div></div>
+      </div>
+      <div class="actions"><button class="btn ghost" id="b-cancel">Annuler</button><button class="btn big" id="b-prepare">Choisir l'écran et préparer</button></div>
+      <p class="err" id="s-err"></p>
+    </div>
+    <div class="card prev">
+      <video id="pv" autoplay muted playsinline></video>
+      <p class="muted" id="prev-hint">L'aperçu apparaîtra ici.</p>
+      <button class="btn big rec-btn" id="b-go" hidden><span class="dot"></span>Lancer l'enregistrement</button>
+      <p class="muted small" id="pip-hint" hidden>Une mini-fenêtre restera au premier plan pendant l'enregistrement : caméra, chrono, pause et stop.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Enregistrement -->
+<section class="view" id="v-rec" hidden>
+  <div class="card recbox">
+    <div class="recbar"><span class="live"><span class="dot"></span>REC</span><span class="timer" id="r-time">0:00</span></div>
+    <video id="rv" autoplay muted playsinline></video>
+    <div class="actions"><button class="btn ghost" id="r-pause">Pause</button><button class="btn big stop" id="r-stop">Arrêter</button></div>
+  </div>
+  <div class="count" id="count" hidden></div>
+</section>
+
+<!-- Relecture / envoi -->
+<section class="view" id="v-review" hidden>
+  <div class="card review">
+    <video id="xv" controls playsinline></video>
+    <label>Titre<input id="x-title" maxlength="120"></label>
+    <div class="actions">
+      <button class="btn ghost" id="x-discard">Supprimer</button>
+      <button class="btn ghost" id="x-dl">Télécharger</button>
+      <button class="btn big" id="x-up">Envoyer et obtenir le lien</button>
+    </div>
+    <div class="prog" id="x-prog" hidden><div id="x-bar"></div></div>
+    <div class="share" id="x-share" hidden>
+      <input id="x-link" readonly><button class="btn" id="x-copy">Copier le lien</button><a class="btn ghost" id="x-open" target="_blank">Ouvrir</a>
+    </div>
+    <p class="err" id="x-err"></p>
+  </div>
+</section>
+
+<div class="toast" id="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>
