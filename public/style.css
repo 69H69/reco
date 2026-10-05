@@ -168,3 +168,11 @@ body.player { background: var(--bg); }
 .vi { gap: 1px; } .vi b { font-size: 15px; font-weight: 500; }
 .empty { border: 1px dashed var(--line); border-radius: 14px; background: #fff; }
 @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } .side { position: static; height: auto; } .mtop, .main .view { padding-left: 18px; padding-right: 18px; } }
+
+/* ── page de téléchargement ── */
+.dlw { max-width: 760px; margin: 0 auto; padding: 48px 24px; } .dlw h1 { font-size: 30px; }
+.dlg { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin: 26px 0; }
+.dlc { display: flex; flex-direction: column; gap: 4px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: #fff; color: var(--ink); text-decoration: none; box-shadow: var(--shadow); transition: border-color .15s, box-shadow .15s; }
+.dlc:hover { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); } .dlc b { font-weight: 600; } .dlc .muted { font-size: 13px; }
+.dlc.rec { border-color: var(--acc); }
+.dln { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; } .dln p { margin: 6px 0 0; font-size: 14px; }

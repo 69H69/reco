@@ -151,11 +151,31 @@ export default {
       return json({ ok: true });
     }
 
-    // ── installateur de l'appli de bureau (déposé dans R2 : apps/Reco-Setup.exe) ──
-    if (p === "/download" && (m === "GET" || m === "HEAD")) {
-      const obj = await env.VIDEOS.get("apps/Reco-Setup.exe");
-      if (!obj) return new Response("L'appli de bureau n'est pas encore disponible sur ce serveur.", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
-      return new Response(m === "HEAD" ? null : obj.body, { headers: { "content-type": "application/octet-stream", "content-length": String(obj.size), "content-disposition": 'attachment; filename="Reco-Setup.exe"' } });
+    // ── appli de bureau : page de choix + fichiers déposés dans R2 (apps/…) ──
+    const APPS = {
+      windows: { key: "apps/Reco-Setup.exe", name: "Reco-Setup.exe" },
+      "mac-arm64": { key: "apps/Reco-arm64.dmg", name: "Reco-arm64.dmg" },
+      "mac-intel": { key: "apps/Reco-x64.dmg", name: "Reco-x64.dmg" },
+    };
+    const dl = p.match(/^\/download\/(windows|mac-arm64|mac-intel)$/);
+    if (dl && (m === "GET" || m === "HEAD")) {
+      const a = APPS[dl[1]], obj = await env.VIDEOS.get(a.key);
+      if (!obj) return new Response("Cette version n'est pas encore disponible sur ce serveur.", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+      return new Response(m === "HEAD" ? null : obj.body, { headers: { "content-type": "application/octet-stream", "content-length": String(obj.size), "content-disposition": `attachment; filename="${a.name}"` } });
+    }
+    if (p === "/download" && m === "GET") {
+      const has = Object.fromEntries(await Promise.all(Object.entries(APPS).map(async ([k, a]) => [k, !!(await env.VIDEOS.head(a.key))])));
+      const ua = req.headers.get("user-agent") || "", mac = /Macintosh|Mac OS X/.test(ua);
+      const card = (k, t, sub) => has[k] ? `<a class="dlc${(mac ? k.startsWith("mac") : k === "windows") ? " rec" : ""}" href="/download/${k}"><b>${t}</b><span class="muted">${sub}</span></a>` : "";
+      const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Télécharger Reco</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head><body class="player">
+<header class="pbar"><a class="brand" href="/"><span class="logo"></span>Reco</a></header>
+<main class="dlw"><h1>Télécharger Reco</h1><p class="muted">L'appli pour enregistrer ton écran et ta caméra, avec une fenêtre de contrôle toujours visible (et invisible dans la vidéo).</p>
+<div class="dlg">${card("windows", "Windows", "Windows 10 et 11")}${card("mac-arm64", "Mac Apple Silicon", "Puces M1, M2, M3, M4")}${card("mac-intel", "Mac Intel", "Mac d'avant 2021")}</div>
+${Object.values(has).some(Boolean) ? "" : '<p class="muted">Aucune version n\'est encore disponible sur ce serveur.</p>'}
+<div class="dln"><b>Au premier lancement</b><p class="muted">Windows : « Informations complémentaires », puis « Exécuter quand même ». Mac : glisse Reco dans Applications, puis clic droit sur Reco &gt; Ouvrir. Ensuite, colle l'adresse de ce site : <b>${esc(url.origin)}</b></p></div>
+</main></body></html>`;
+      return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
     }
 
     // ── connexion ──
