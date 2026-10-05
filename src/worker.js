@@ -253,6 +253,7 @@ export default {
       if (m === "PATCH") {
         const b = await req.json().catch(() => ({}));
         meta.title = String(b.title || meta.title).trim().slice(0, 120) || meta.title;
+        meta.updated = Date.now();
         if ("trimStart" in b || "trimEnd" in b) {
           const d = meta.duration || 6 * 3600;
           const ts = Math.max(0, Math.min(Number(b.trimStart) || 0, d));

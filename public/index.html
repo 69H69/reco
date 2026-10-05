@@ -8,13 +8,10 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="/"><span class="logo"></span>Reco</a>
-  <div class="topr"><a class="link dl" id="dl-app" href="/download" hidden>Télécharger l'app</a><div class="who" id="who"></div></div>
-</header>
 
-<!-- Connexion -->
-<section class="view" id="v-login" hidden>
+<!-- Connexion (hors de l'appli) -->
+<section class="view guest" id="v-login" hidden>
+  <a class="brand" href="/"><span class="logo"></span>Reco</a>
   <div class="card narrow">
     <h1>Bienvenue</h1>
     <p class="muted">Entre ton prénom et le code d'invitation.</p>
@@ -27,91 +24,112 @@
   </div>
 </section>
 
-<!-- Bibliothèque -->
-<section class="view" id="v-lib" hidden>
-  <div class="libhead">
-    <div><h1>Vidéos</h1><p class="muted" id="quota"></p></div>
-    <div class="libact">
-      <button class="btn big ghost" id="b-import">Importer une vidéo</button>
-      <button class="btn big rec-btn" id="b-new"><span class="dot"></span>Nouvel enregistrement</button>
-      <input type="file" id="f-import" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" hidden>
+<div class="shell" id="shell" hidden>
+  <!-- Barre latérale -->
+  <aside class="side">
+    <div class="ws"><span class="logo"></span><b id="ws-name">Reco</b></div>
+    <button class="btn block" id="b-new"><svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="13" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 10.5l5-3v9l-5-3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Enregistrer</button>
+    <button class="btn ghost block" id="b-import"><svg viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 14v4.5A1.5 1.5 0 006.5 20h11a1.5 1.5 0 001.5-1.5V14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Importer</button>
+    <input type="file" id="f-import" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" hidden>
+    <nav class="nav" id="nav">
+      <button data-f="mine" class="on"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>Mes vidéos<span class="cnt" id="c-mine">0</span></button>
+      <button data-f="all"><svg viewBox="0 0 24 24"><rect x="4.5" y="3.5" width="15" height="17" rx="2"/><path d="M8 8h3M13 8h3M8 12h3M13 12h3M10.5 20.5v-3.5h3v3.5"/></svg>Vidéos de l'espace<span class="cnt" id="c-all">0</span></button>
+    </nav>
+    <div class="side-foot">
+      <a class="navlink" id="dl-app" href="/download" hidden><svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/></svg>Télécharger l'app</a>
+      <p class="muted small" id="quota"></p>
+      <div class="who" id="who"></div>
     </div>
-  </div>
-  <div class="grid" id="grid"></div>
-  <p class="muted empty" id="empty" hidden>Aucune vidéo pour l'instant. Lance ton premier enregistrement.</p>
-</section>
+  </aside>
 
-<!-- Préparation -->
-<section class="view" id="v-setup" hidden>
-  <div class="setup">
-    <div class="card">
-      <h2>Que veux-tu enregistrer ?</h2>
-      <div class="modes" id="modes">
-        <button class="mode on" data-mode="screen+cam"><b>Écran + caméra</b><span>Ta tête dans une bulle</span></button>
-        <button class="mode" data-mode="screen"><b>Écran seul</b><span>Sans caméra</span></button>
-        <button class="mode" data-mode="cam"><b>Caméra seule</b><span>Face caméra</span></button>
-      </div>
-      <div class="row2">
-        <label id="lab-cam">Caméra<select id="s-cam"></select></label>
-        <label>Micro<select id="s-mic"></select></label>
-      </div>
-      <div class="row2">
-        <label class="chk" id="lab-sys"><input type="checkbox" id="c-sys" checked> Son de l'ordinateur</label>
-        <div id="lab-corner"><span class="lbl">Caméra : forme et position</span>
-          <div class="seg" id="shapes"><button data-s="square" class="on">Arrondie</button><button data-s="circle">Ronde</button></div>
-          <div class="corners" id="corners"><button data-c="tl">↖</button><button data-c="tr">↗</button><button data-c="bl" class="on">↙</button><button data-c="br">↘</button></div></div>
-      </div>
-      <div class="actions"><button class="btn ghost" id="b-cancel">Annuler</button><button class="btn big" id="b-prepare">Choisir l'écran et préparer</button></div>
-      <p class="err" id="s-err"></p>
+  <main class="main">
+    <div class="mtop" id="mtop">
+      <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><input id="q" placeholder="Rechercher une vidéo…" autocomplete="off"></div>
     </div>
-    <div class="card prev">
-      <video id="pv" autoplay muted playsinline></video>
-      <p class="muted" id="prev-hint">L'aperçu apparaîtra ici.</p>
-      <button class="btn big rec-btn" id="b-go" hidden><span class="dot"></span>Lancer l'enregistrement</button>
-      <p class="muted small" id="pip-hint" hidden>Une mini-fenêtre restera au premier plan pendant l'enregistrement : caméra, chrono, pause et stop.</p>
-    </div>
-  </div>
-</section>
 
-<!-- Enregistrement -->
-<section class="view" id="v-rec" hidden>
-  <div class="card recbox">
-    <div class="recbar"><span class="live"><span class="dot"></span>REC</span><span class="timer" id="r-time">0:00</span></div>
-    <video id="rv" autoplay muted playsinline></video>
-    <div class="actions"><button class="btn ghost" id="r-pause">Pause</button><button class="btn big stop" id="r-stop">Arrêter</button></div>
-  </div>
-  <div class="count" id="count" hidden></div>
-</section>
+    <!-- Bibliothèque -->
+    <section class="view" id="v-lib" hidden>
+      <div class="libhead">
+        <h1><span id="lib-title">Mes vidéos</span> <span class="count" id="lib-count"></span></h1>
+        <select id="sort" class="sel"><option value="new">Plus récentes</option><option value="old">Plus anciennes</option><option value="views">Plus vues</option><option value="title">Titre (A-Z)</option></select>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="empty" id="empty" hidden><b>Aucune vidéo pour l'instant</b><p class="muted">Clique sur « Enregistrer » pour faire ta première vidéo, ou importe un fichier.</p></div>
+    </section>
 
-<!-- Vidéo : envoi, lien, titre, découpe -->
-<section class="view" id="v-review" hidden>
-  <div class="review">
-    <div class="rmain">
-      <video id="xv" controls playsinline></video>
-      <div>
-        <div class="xhead"><span class="status" id="x-status"></span></div>
-        <div class="prog" id="x-prog" hidden><div id="x-bar"></div></div>
-        <div class="share" id="x-share" hidden>
-          <input id="x-link" readonly><button class="btn" id="x-copy">Copier le lien</button><a class="btn ghost" id="x-open" target="_blank">Ouvrir</a>
+    <!-- Préparation -->
+    <section class="view" id="v-setup" hidden>
+      <div class="setup">
+        <div class="card">
+          <h2>Que veux-tu enregistrer ?</h2>
+          <div class="modes" id="modes">
+            <button class="mode on" data-mode="screen+cam"><b>Écran + caméra</b><span>Ta tête dans une bulle</span></button>
+            <button class="mode" data-mode="screen"><b>Écran seul</b><span>Sans caméra</span></button>
+            <button class="mode" data-mode="cam"><b>Caméra seule</b><span>Face caméra</span></button>
+          </div>
+          <div class="row2">
+            <label id="lab-cam">Caméra<select id="s-cam"></select></label>
+            <label>Micro<select id="s-mic"></select></label>
+          </div>
+          <div class="row2">
+            <label class="chk" id="lab-sys"><input type="checkbox" id="c-sys" checked> Son de l'ordinateur</label>
+            <div id="lab-corner"><span class="lbl">Caméra : forme et position</span>
+              <div class="seg" id="shapes"><button data-s="square" class="on">Arrondie</button><button data-s="circle">Ronde</button></div>
+              <div class="corners" id="corners"><button data-c="tl">↖</button><button data-c="tr">↗</button><button data-c="bl" class="on">↙</button><button data-c="br">↘</button></div></div>
+          </div>
+          <div class="actions"><button class="btn ghost" id="b-cancel">Annuler</button><button class="btn big" id="b-prepare">Choisir l'écran et préparer</button></div>
+          <p class="err" id="s-err"></p>
+        </div>
+        <div class="card prev">
+          <video id="pv" autoplay muted playsinline></video>
+          <p class="muted" id="prev-hint">L'aperçu apparaîtra ici.</p>
+          <button class="btn big rec-btn" id="b-go" hidden><span class="dot"></span>Lancer l'enregistrement</button>
+          <p class="muted small" id="pip-hint" hidden>Une mini-fenêtre restera au premier plan pendant l'enregistrement : caméra, chrono, pause et stop.</p>
         </div>
       </div>
-    </div>
-    <aside class="rside">
-      <label>Titre<input id="x-title" maxlength="120"></label>
-      <div class="trim" id="x-trim" hidden>
-        <span class="lbl">Découper</span>
-        <div class="tr"><span>Début</span><input type="range" id="x-ts" min="0" value="0"><b id="x-tsl">0:00</b></div>
-        <div class="tr"><span>Fin</span><input type="range" id="x-te" min="0" value="0"><b id="x-tel">0:00</b></div>
-        <p class="muted small">Le début et la fin sont masqués à la lecture.</p>
+    </section>
+
+    <!-- Enregistrement -->
+    <section class="view" id="v-rec" hidden>
+      <div class="card recbox">
+        <div class="recbar"><span class="live"><span class="dot"></span>REC</span><span class="timer" id="r-time">0:00</span></div>
+        <video id="rv" autoplay muted playsinline></video>
+        <div class="actions"><button class="btn ghost" id="r-pause">Pause</button><button class="btn big stop" id="r-stop">Arrêter</button></div>
       </div>
-      <div class="actions">
-        <button class="link danger" id="x-discard">Supprimer</button>
-        <span><button class="btn ghost" id="x-dl" hidden>Télécharger</button> <button class="btn" id="x-done">Terminé</button></span>
+      <div class="count-o" id="count" hidden></div>
+    </section>
+
+    <!-- Vidéo : envoi, lien, titre, découpe -->
+    <section class="view" id="v-review" hidden>
+      <div class="review">
+        <div class="rmain">
+          <video id="xv" controls playsinline></video>
+          <div>
+            <div class="xhead"><span class="status" id="x-status"></span></div>
+            <div class="prog" id="x-prog" hidden><div id="x-bar"></div></div>
+            <div class="share" id="x-share" hidden>
+              <input id="x-link" readonly><button class="btn" id="x-copy">Copier le lien</button><a class="btn ghost" id="x-open" target="_blank">Ouvrir</a>
+            </div>
+          </div>
+        </div>
+        <aside class="rside">
+          <label>Titre<input id="x-title" maxlength="120"></label>
+          <div class="trim" id="x-trim" hidden>
+            <span class="lbl">Découper</span>
+            <div class="tr"><span>Début</span><input type="range" id="x-ts" min="0" value="0"><b id="x-tsl">0:00</b></div>
+            <div class="tr"><span>Fin</span><input type="range" id="x-te" min="0" value="0"><b id="x-tel">0:00</b></div>
+            <p class="muted small">Le début et la fin sont masqués à la lecture.</p>
+          </div>
+          <div class="actions">
+            <button class="link danger" id="x-discard">Supprimer</button>
+            <span><button class="btn ghost" id="x-dl" hidden>Télécharger</button> <button class="btn" id="x-done">Terminé</button></span>
+          </div>
+          <p class="err" id="x-err"></p>
+        </aside>
       </div>
-      <p class="err" id="x-err"></p>
-    </aside>
-  </div>
-</section>
+    </section>
+  </main>
+</div>
 
 <div class="toast" id="toast"></div>
 <script src="/app.js"></script>

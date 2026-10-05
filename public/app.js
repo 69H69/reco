@@ -1,9 +1,12 @@
 // Reco — appli d'enregistrement (Chrome / Edge sur ordinateur).
 const $ = (s) => document.querySelector(s);
-const show = (id) => document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== id));
+const show = (id) => { document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== id)); const m = document.getElementById("mtop"); if (m) m.hidden = id !== "v-lib"; };
 const toast = (t) => { const el = $("#toast"); el.textContent = t; el.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("on"), 2200); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const fmtDur2 = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const RTF = new Intl.RelativeTimeFormat("fr", { numeric: "auto" });
+function ago(t) { const s = (t - Date.now()) / 1000, a = Math.abs(s); for (const [u, n] of [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]]) if (a >= n) return RTF.format(Math.round(s / n), u); return "à l'instant"; }
 const fmtSize = (b) => (b >= 1e9 ? `${+(b / 1e9).toFixed(2)} Go`.replace(".", ",") : `${Math.round(b / 1e6)} Mo`);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const TEST = new URLSearchParams(location.search).has("fakeScreen"); // tests automatisés : écran factice
@@ -56,8 +59,10 @@ async function boot() {
   if (!window.recoDesktop) $("#dl-app").hidden = false;
   if (!("MediaStreamTrackProcessor" in window)) document.body.insertAdjacentHTML("afterbegin", '<div class="warn">Pour enregistrer, ouvre Reco dans <b>Chrome</b> ou <b>Edge</b> sur ordinateur.</div>');
   try { me = await api("/api/me"); } catch { me = null; }
-  if (!me) { $("#who").innerHTML = ""; show("v-login"); return; }
-  $("#who").innerHTML = `<span class="av">${esc(me.name.slice(0, 1).toUpperCase())}</span><span>${esc(me.name)}</span><button class="link" id="b-out">Déconnexion</button>`;
+  if (!me) { $("#shell").hidden = true; show("v-login"); return; }
+  $("#shell").hidden = false;
+  $("#ws-name").textContent = `Espace de ${me.name}`;
+  $("#who").innerHTML = `<span class="av">${esc(me.name.slice(0, 1).toUpperCase())}</span><span class="nm">${esc(me.name)}</span><button class="link" id="b-out">Déconnexion</button>`;
   $("#b-out").onclick = async () => { await api("/api/logout", {}); location.reload(); };
   loadLib();
 }
@@ -66,27 +71,48 @@ $("#f-login").onsubmit = async (e) => {
   try { await api("/api/login", { name: $("#l-name").value, code: $("#l-code").value }); boot(); } catch (err) { $("#l-err").textContent = err.message; }
 };
 
-let lib = [];
+let lib = [], LF = "mine";
+const isMine = (v) => v.author.toLowerCase() === me.name.toLowerCase();
+const IC = {
+  link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>',
+  edit: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>',
+  del: '<svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>',
+};
 async function loadLib() {
   show("v-lib");
   const { videos, used, quota } = await api("/api/videos");
   lib = videos;
-  $("#quota").textContent = `${videos.length} vidéo${videos.length > 1 ? "s" : ""} · ${fmtSize(used)} utilisés sur ${fmtSize(quota)} gratuits`;
-  $("#empty").hidden = videos.length > 0;
-  $("#grid").innerHTML = videos.map((v) => {
-    const mine = v.author.toLowerCase() === me.name.toLowerCase();
-    const dur = (v.trimEnd || v.duration || 0) - (v.trimStart || 0);
+  $("#quota").textContent = `${fmtSize(used)} utilisés sur ${fmtSize(quota)}`;
+  $("#c-mine").textContent = videos.filter(isMine).length; $("#c-all").textContent = videos.length;
+  renderLib();
+}
+function renderLib() {
+  const q = $("#q").value.trim().toLowerCase(), sort = $("#sort").value;
+  let list = lib.filter((v) => (LF === "all" || isMine(v)) && (!q || v.title.toLowerCase().includes(q) || v.author.toLowerCase().includes(q)));
+  const by = { new: (a, b) => (b.updated || b.created) - (a.updated || a.created), old: (a, b) => a.created - b.created, views: (a, b) => (b.views || 0) - (a.views || 0), title: (a, b) => a.title.localeCompare(b.title, "fr") };
+  list.sort(by[sort]);
+  document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.f === LF));
+  $("#lib-title").textContent = LF === "all" ? "Vidéos de l'espace" : "Mes vidéos";
+  $("#lib-count").textContent = list.length;
+  $("#empty").hidden = list.length > 0;
+  $("#grid").innerHTML = list.map((v) => {
+    const dur = (v.trimEnd || v.duration || 0) - (v.trimStart || 0), mine = isMine(v);
+    const when = v.updated ? `Modifiée ${ago(v.updated)}` : `Créée ${ago(v.created)}`;
     return `<article class="vc" data-id="${v.id}">
-      <a href="/v/${v.id}" target="_blank" class="th"><img src="/t/${v.id}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="d">${dur > 0 ? fmtDur(dur) : ""}</span></a>
-      <div class="vi"><b title="${esc(v.title)}">${esc(v.title)}</b><span class="muted">${esc(v.author)} · ${new Date(v.created).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} · ${v.views || 0} vue${(v.views || 0) > 1 ? "s" : ""}</span></div>
-      <div class="va"><button class="btn small" data-act="copy">Copier le lien</button>${mine ? '<button class="link" data-act="edit">Modifier</button><button class="link danger" data-act="del">Supprimer</button>' : ""}</div>
+      <div class="thw"><a href="/v/${v.id}" target="_blank" class="th"><span class="fr"><img src="/t/${v.id}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"></span>${dur > 0 ? `<span class="d">${fmtDur2(dur)}</span>` : ""}</a>
+        <div class="hov"><button data-act="copy" title="Copier le lien">${IC.link}</button>${mine ? `<button data-act="edit" title="Modifier">${IC.edit}</button><button data-act="del" title="Supprimer">${IC.del}</button>` : ""}</div></div>
+      <div class="vi"><b title="${esc(v.title)}">${esc(v.title)}</b><span class="muted">${LF === "all" ? esc(v.author) + " · " : ""}${when}${v.views ? ` · ${v.views} vue${v.views > 1 ? "s" : ""}` : ""}</span></div>
     </article>`;
   }).join("");
 }
+$("#q").oninput = renderLib;
+$("#sort").onchange = renderLib;
+$("#nav").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; LF = b.dataset.f; show("v-lib"); renderLib(); };
 $("#grid").onclick = async (e) => {
   const b = e.target.closest("[data-act]"); if (!b) return;
+  e.preventDefault();
   const id = b.closest(".vc").dataset.id;
-  if (b.dataset.act === "copy") { await navigator.clipboard.writeText(`${location.origin}/v/${id}`); toast("Lien copié ✓"); }
+  if (b.dataset.act === "copy") { await navigator.clipboard.writeText(`${location.origin}/v/${id}`); toast("Lien copié"); }
   if (b.dataset.act === "edit") openReview({ meta: lib.find((v) => v.id === id) });
   if (b.dataset.act === "del" && confirm("Supprimer définitivement cette vidéo ? Le lien ne marchera plus.")) { await api(`/api/videos/${id}`, null, "DELETE"); loadLib(); }
 };
@@ -326,7 +352,7 @@ function uploaded(meta, silent) {
   $("#x-link").value = link; $("#x-open").href = link; $("#x-share").hidden = false; $("#x-done").disabled = false;
   if (!X.download) $("#x-dl").hidden = false;
   setupTrim(meta);
-  if (!silent) navigator.clipboard.writeText(link).then(() => toast("Lien copié ✓"), () => {});
+  if (!silent) navigator.clipboard.writeText(link).then(() => toast("Lien copié"), () => {});
 }
 function uploadFailed(err, up) {
   $("#x-status").textContent = ""; $("#x-prog").hidden = true;
@@ -353,7 +379,7 @@ async function saveReview() {
 }
 $("#x-title").onchange = () => saveReview().catch(() => {});
 $("#x-done").onclick = async () => { try { await saveReview(); } catch (e) { $("#x-err").textContent = e.message; return; } X = null; cleanup(); loadLib(); };
-$("#x-copy").onclick = async () => { await saveReview().catch(() => {}); await navigator.clipboard.writeText($("#x-link").value); toast("Lien copié ✓"); };
+$("#x-copy").onclick = async () => { await saveReview().catch(() => {}); await navigator.clipboard.writeText($("#x-link").value); toast("Lien copié"); };
 $("#x-dl").onclick = () => { const a = document.createElement("a"); a.href = X.download || `/f/${X.meta.id}`; a.download = `${$("#x-title").value || "video"}`; a.click(); };
 $("#x-discard").onclick = async () => {
   if (!confirm("Supprimer cette vidéo ? Le lien ne marchera plus.")) return;
