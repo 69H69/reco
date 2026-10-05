@@ -69,3 +69,4 @@ body.player { display: flex; justify-content: center; }
 .trim { margin-top: 16px; } .trim .tr { display: grid; grid-template-columns: 50px 1fr 52px; gap: 12px; align-items: center; margin-top: 6px; }
 .trim input[type=range] { accent-color: var(--acc); padding: 0; } .trim b { font: 600 14px ui-monospace, monospace; text-align: right; }
 .va .btn { white-space: nowrap; }
+.topr { display: flex; align-items: center; gap: 22px; } .dl { color: var(--acc); text-decoration: none; font-weight: 600; }

@@ -143,6 +143,13 @@ export default {
       return json({ ok: true });
     }
 
+    // ── installateur de l'appli de bureau (déposé dans R2 : apps/Reco-Setup.exe) ──
+    if (p === "/download" && (m === "GET" || m === "HEAD")) {
+      const obj = await env.VIDEOS.get("apps/Reco-Setup.exe");
+      if (!obj) return new Response("L'appli de bureau n'est pas encore disponible sur ce serveur.", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+      return new Response(m === "HEAD" ? null : obj.body, { headers: { "content-type": "application/octet-stream", "content-length": String(obj.size), "content-disposition": 'attachment; filename="Reco-Setup.exe"' } });
+    }
+
     // ── connexion ──
     if (p === "/api/login" && m === "POST") {
       const body = await req.json().catch(() => ({}));

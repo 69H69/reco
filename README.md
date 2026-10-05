@@ -21,6 +21,21 @@
 |---|---|---|
 | ![Préparer](docs/setup.png) | ![Enregistrer](docs/recording.png) | ![Partager](docs/share.png) |
 
+## Appli de bureau (Windows)
+
+Comme Tella, Reco existe en **appli à installer** (`desktop/`, Electron). Elle ajoute :
+- **son propre sélecteur** d'écran ou de fenêtre, avec miniatures, et le **son de l'ordinateur** capturé directement ;
+- une **fenêtre de contrôle toujours au premier plan et invisible dans la vidéo** (chrono, pause, stop, bulle) ;
+- la fenêtre principale qui **se range pendant l'enregistrement** et revient à l'arrêt ;
+- une icône dans la barre système et le raccourci **Ctrl+Maj+R** (lancer / arrêter).
+
+Au premier lancement, elle demande l'adresse de ton serveur Reco. Le site propose aussi un lien **« Télécharger l'app »** (`/download`), qui sert l'installateur déposé dans R2 :
+```bash
+cd desktop && npm install && npm run dist          # fabrique dist/Reco-Setup-x.y.z.exe
+npx wrangler r2 object put reco-videos/apps/Reco-Setup.exe --file desktop/dist/Reco-Setup-1.0.0.exe --remote
+```
+L'installateur n'est pas signé numériquement : au premier lancement, Windows affiche « Windows a protégé votre ordinateur ». Clique sur *Informations complémentaires*, puis sur *Exécuter quand même*.
+
 ## Combien ça coûte ?
 
 **0 €** dans l'offre gratuite de Cloudflare : Workers (100 000 requêtes/jour) et R2 (**10 Go de stockage, bande passante gratuite**, soit environ 4 à 5 h de vidéo 1080p).
@@ -72,6 +87,7 @@ python tests/e2e.py screen+cam 25
 ## Architecture
 
 ```
+desktop/       appli de bureau Electron (sélecteur, son système, fenêtre de contrôle, barre système) + installateur
 public/        appli (HTML/CSS/JS sans framework) + comp.js (compositeur en Web Worker)
 src/worker.js  API Cloudflare Worker : connexion, envoi multipart vers R2, /v/:id (page de partage),
                /f/:id (vidéo, avec Range), /t/:id (miniature), vues, découpe

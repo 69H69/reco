@@ -6,7 +6,7 @@ compatibility_date = "2026-09-01"
 [assets]
 directory = "./public"
 binding = "ASSETS"
-run_worker_first = ["/api/*", "/v/*", "/f/*", "/t/*"]
+run_worker_first = ["/api/*", "/v/*", "/f/*", "/t/*", "/download"]
 
 # Stockage des vidéos (Cloudflare R2, offre gratuite : 10 Go, bande passante gratuite)
 [[r2_buckets]]

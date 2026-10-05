@@ -53,6 +53,7 @@ class Uploader {
 // ───────── connexion & bibliothèque ─────────
 let me = null;
 async function boot() {
+  if (!window.recoDesktop) $("#dl-app").hidden = false;
   if (!("MediaStreamTrackProcessor" in window)) document.body.insertAdjacentHTML("afterbegin", '<div class="warn">Pour enregistrer, ouvre Reco dans <b>Chrome</b> ou <b>Edge</b> sur ordinateur.</div>');
   try { me = await api("/api/me"); } catch { me = null; }
   if (!me) { $("#who").innerHTML = ""; show("v-login"); return; }
@@ -200,7 +201,7 @@ $("#b-prepare").onclick = async () => {
   if (aTracks.length > 1) { R.ac = new AudioContext(); const dst = R.ac.createMediaStreamDestination(); aTracks.forEach((t) => R.ac.createMediaStreamSource(new MediaStream([t])).connect(dst)); R.audio = dst.stream.getAudioTracks()[0]; }
   else R.audio = aTracks[0] || null;
   $("#pv").srcObject = new MediaStream([gen]);
-  $("#prev-hint").hidden = true; $("#b-go").hidden = false; $("#pip-hint").hidden = !("documentPictureInPicture" in window);
+  $("#prev-hint").hidden = true; $("#b-go").hidden = false; $("#pip-hint").hidden = !(DESKTOP || "documentPictureInPicture" in window);
 };
 
 // ───────── enregistrement ─────────
@@ -228,6 +229,7 @@ $("#b-go").onclick = async () => {
   };
   R.rec.onstop = onStopped;
   R.rec.start(1000); R.t0 = performance.now();
+  if (DESKTOP && S.mode !== "cam") window.recoDesktop.recording(true); // la fenêtre principale se range
   R.tick = setInterval(tick, 250); tick();
 };
 function tick() { const t = fmtDur(elapsed()); $("#r-time").textContent = t; if (R?.pip) R.pip.document.getElementById("t").textContent = t; }
@@ -243,10 +245,14 @@ $("#r-stop").onclick = () => stopRec();
 function stopRec() { if (R?.rec && R.rec.state !== "inactive") { R.duration = elapsed(); R.rec.stop(); } }
 
 // ───────── mini-fenêtre flottante (Document Picture-in-Picture) ─────────
+const DESKTOP = !!window.recoDesktop; // dans l'appli de bureau (Electron)
 async function openPip() {
-  if (!("documentPictureInPicture" in window)) return;
+  if (!DESKTOP && !("documentPictureInPicture" in window)) return;
   try {
-    const w = await documentPictureInPicture.requestWindow({ width: 260, height: R.cam ? 330 : 150 });
+    // appli de bureau : vraie fenêtre système toujours au premier plan, invisible dans la vidéo ; navigateur : Document PiP
+    const w = DESKTOP ? window.open("", "reco-pip", `width=270,height=${R.cam ? 350 : 170}`) : await documentPictureInPicture.requestWindow({ width: 260, height: R.cam ? 330 : 150 });
+    if (!w) return;
+    w.document.title = "Reco";
     R.pip = w;
     w.document.head.innerHTML = `<style>
       body{margin:0;background:#0b0c10;color:#f5f3ee;font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px;box-sizing:border-box;height:100vh}
@@ -279,6 +285,7 @@ function pipCount(n) { const c = R?.pip?.document.getElementById("c"); if (c) { 
 // ───────── fin d'enregistrement : finalisation de l'envoi ─────────
 async function onStopped() {
   clearInterval(R.tick); R.pip?.close(); stopTracks();
+  if (DESKTOP) window.recoDesktop.recording(false);
   const type = R.mime.split(";")[0] || "video/webm", rec = R;
   const localUrl = rec.localDropped ? null : URL.createObjectURL(new Blob(rec.chunks, { type }));
   const title = `Enregistrement du ${new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} à ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
