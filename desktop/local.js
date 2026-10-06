@@ -101,28 +101,32 @@ function register({ loadCfg, saveCfg }) {
   ipcMain.handle("local:start", async (e, ext) => {
     if (!(ext in TYPES)) throw new Error("Format non pris en charge.");
     const id = newId(), file = path.join(videosDir(), `${id}.${ext}.part`);
-    writers.set(id, { ext, file, ws: fs.createWriteStream(file) });
+    writers.set(id, { ext, file, fh: await fsp.open(file, "w"), end: 0 });
     return { id };
   });
-  ipcMain.handle("local:chunk", (e, id, buf) => new Promise((ok, ko) => {
+  // morceau à écrire à une position donnée (le MP4 réécrit son en-tête à la fin), ou à la suite si pos est absent
+  ipcMain.handle("local:chunk", async (e, id, buf, pos) => {
     const w = writers.get(id);
-    if (!w) return ko(new Error("Enregistrement inconnu."));
-    w.ws.write(Buffer.from(buf), (err) => (err ? ko(err) : ok(true)));
-  }));
+    if (!w) throw new Error("Enregistrement inconnu.");
+    const b = Buffer.from(buf), at = Number.isInteger(pos) ? pos : w.end;
+    await w.fh.write(b, 0, b.length, at);
+    w.end = Math.max(w.end, at + b.length);
+    return true;
+  });
   ipcMain.handle("local:finish", async (e, id, b) => {
     const w = writers.get(id);
     if (!w) throw new Error("Enregistrement inconnu.");
-    await new Promise((ok) => w.ws.end(ok));
+    await w.fh.close();
     writers.delete(id);
     const final = path.join(videosDir(), `${id}.${w.ext}`);
     await fsp.rename(w.file, final);
     const meta = { id, ext: w.ext, contentType: TYPES[w.ext], size: (await fsp.stat(final)).size, title: String(b.title || "Sans titre").slice(0, 120),
-      author: userName(), created: Date.now(), duration: Number(b.duration) || 0, width: b.width || null, height: b.height || null };
+      author: userName(), created: Date.now(), duration: Number(b.duration) || 0, width: b.width || null, height: b.height || null, fps: b.fps || null };
     return writeMeta(meta);
   });
   ipcMain.handle("local:abort", async (e, id) => {
     const w = writers.get(id);
-    if (w) { w.ws.destroy(); writers.delete(id); await fsp.rm(w.file, { force: true }); }
+    if (w) { writers.delete(id); await w.fh.close().catch(() => {}); await fsp.rm(w.file, { force: true }); }
     return true;
   });
   ipcMain.handle("local:thumb", async (e, id, buf) => {

@@ -13,9 +13,22 @@ const SCOPE = "https://www.googleapis.com/auth/drive.file";
 const PART = 8 * 1024 * 1024; // multiple de 256 Ko, exigé par Google
 const MOCK = process.env.RECO_DRIVE_MOCK === "1"; // tests : simule Google Drive
 
+// Identifiants Google, par ordre de priorité : variables d'environnement, fichier livré avec l'appli (google-client.json),
+// puis ceux que l'utilisateur a importés lui-même dans l'appli (fichier « client_secret_….json » de Google Cloud).
+let readCfg = () => ({});
 function client() {
   if (process.env.RECO_GOOGLE_CLIENT_ID) return { id: process.env.RECO_GOOGLE_CLIENT_ID, secret: process.env.RECO_GOOGLE_CLIENT_SECRET || "" };
-  try { const c = JSON.parse(fs.readFileSync(path.join(__dirname, "google-client.json"), "utf8")); return c.client_id ? { id: c.client_id, secret: c.client_secret || "" } : null; } catch { return null; }
+  try { const c = JSON.parse(fs.readFileSync(path.join(__dirname, "google-client.json"), "utf8")); if (c.client_id) return { id: c.client_id, secret: c.client_secret || "" }; } catch {}
+  const own = readCfg().googleClient;
+  return own?.id ? { id: own.id, secret: own.secret || "" } : null;
+}
+// accepte le fichier téléchargé depuis Google Cloud ({ installed: {...} }) ou un objet { client_id, client_secret }
+function parseClient(text) {
+  let j; try { j = JSON.parse(text); } catch { throw new Error("Ce fichier n'est pas un fichier d'identifiants Google (JSON illisible)."); }
+  if (j.web) throw new Error("Ce client est de type « Application Web ». Crée plutôt un client de type « Application de bureau ».");
+  const c = j.installed || j;
+  if (!/\.apps\.googleusercontent\.com$/.test(c.client_id || "")) throw new Error("Identifiant client introuvable dans ce fichier.");
+  return { id: c.client_id, secret: c.client_secret || "" };
 }
 const b64u = (b) => b.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const seal = (s) => (safeStorage.isEncryptionAvailable() ? "enc:" + safeStorage.encryptString(s).toString("base64") : "raw:" + s);
@@ -23,6 +36,7 @@ const unseal = (s) => (!s ? "" : s.startsWith("enc:") ? safeStorage.decryptStrin
 
 function register({ loadCfg, saveCfg, win }) {
   let access = null; // { token, exp }
+  readCfg = loadCfg;
 
   const status = () => {
     const d = loadCfg().drive || {};
@@ -44,6 +58,11 @@ function register({ loadCfg, saveCfg, win }) {
   const g = async (url, opt = {}) => fetch(url, { ...opt, headers: { authorization: `Bearer ${await token()}`, ...(opt.headers || {}) } });
 
   ipcMain.handle("drive:status", () => status());
+  ipcMain.handle("drive:setClient", (e, text) => {
+    const c = parseClient(String(text || ""));
+    const cfg = loadCfg(); cfg.googleClient = c; delete cfg.drive; saveCfg(cfg); access = null;
+    return status();
+  });
 
   ipcMain.handle("drive:connect", async () => {
     if (MOCK) { const cfg = loadCfg(); cfg.drive = { refresh: seal("mock"), email: "test@exemple.com" }; saveCfg(cfg); return status(); }

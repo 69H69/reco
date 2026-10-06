@@ -60,9 +60,10 @@ const L = LOCAL ? window.recoDesktop.lib : null, D = LOCAL ? window.recoDesktop.
 class LocalWriter { // même interface que Uploader, mais écrit dans Vidéos/Reco pendant l'enregistrement
   constructor(ext) { this.ext = ext; this.sent = 0; this.pendingSize = 0; this.q = Promise.resolve(); }
   async start() { Object.assign(this, await L.start(this.ext)); return this; }
-  push(blob) {
-    this.pendingSize += blob.size;
-    this.q = this.q.then(async () => { if (this.aborted) return; await L.chunk(this.id, await blob.arrayBuffer()); this.sent += blob.size; this.pendingSize -= blob.size; this.onprogress?.(); }).catch((e) => (this.error = e));
+  push(data, pos) { // data : Blob ou ArrayBuffer ; pos : position dans le fichier (sinon à la suite)
+    const size = data.size ?? data.byteLength;
+    this.pendingSize += size;
+    this.q = this.q.then(async () => { if (this.aborted) return; await L.chunk(this.id, data.arrayBuffer ? await data.arrayBuffer() : data, pos ?? null); this.sent += size; this.pendingSize -= size; this.onprogress?.(); }).catch((e) => (this.error = e));
   }
   async finish(meta) { await this.q; if (this.error) throw this.error; return L.finish(this.id, meta); }
   abort() { this.aborted = true; if (this.id) L.abort(this.id).catch(() => {}); }
@@ -78,24 +79,57 @@ async function saveThumb(meta, blob) {
 }
 const patchVideo = (id, body) => (LOCAL ? L.patch(id, body) : api(`/api/videos/${id}`, body, "PATCH"));
 const deleteVideo = (id) => (LOCAL ? L.del(id) : api(`/api/videos/${id}`, null, "DELETE"));
-async function renderDrive() {
-  const el = $("#drive-st"); if (!el || !LOCAL) return;
-  const s = await D.status(); el.hidden = false;
-  el.innerHTML = s.connected ? `<span class="gd on"></span><span class="gdt">Google Drive<small>${esc(s.email)}</small></span><button class="link" id="gd-x">Déconnecter</button>`
-    : s.configured ? `<span class="gd"></span><span class="gdt">Google Drive<small>non connecté</small></span><button class="link" id="gd-c">Connecter</button>`
-    : `<span class="gd"></span><span class="gdt">Google Drive<small>non configuré</small></span>`;
-  $("#gd-x")?.addEventListener("click", async () => { if (confirm("Déconnecter Google Drive ? Les liens déjà partagés continuent de marcher.")) { await D.disconnect(); renderDrive(); } });
-  $("#gd-c")?.addEventListener("click", async () => { try { await D.connect(); } catch (e) { toast(errMsg(e)); } renderDrive(); });
-}
-// ── « Mon serveur Reco » (Cloudflare de l'utilisateur) ──
-async function renderCloud() {
-  const el = $("#cloud-st"); if (!el || !LOCAL) return;
-  const s = await C.status(); el.hidden = false;
-  el.innerHTML = s.connected ? `<span class="gd on"></span><span class="gdt">Serveur Reco<small>${esc(s.server.replace(/^https?:\/\//, ""))}</small></span><button class="link" id="cl-x">Déconnecter</button>`
-    : `<span class="gd"></span><span class="gdt">Serveur Reco<small>non connecté</small></span><button class="link" id="cl-c">Connecter</button>`;
-  $("#cl-x")?.addEventListener("click", async () => { if (confirm("Déconnecter ton serveur Reco ? Les liens déjà publiés continuent de marcher.")) { await C.disconnect(); renderCloud(); } });
+// ───────── réglages du partage : Google Drive et « Mon serveur Reco » ─────────
+const GD_IC = '<svg viewBox="0 0 24 24"><path d="M8.6 3.5h6.8l6.1 10.6-3.4 5.9H5.9l-3.4-5.9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.6 3.5l6.4 10.6h6.5M15.4 3.5L9 14.1 5.9 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>';
+const CL_IC = '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+const host = (u) => String(u || "").replace(/^https?:\/\//, "");
+async function renderSharing() {
+  if (!LOCAL) return;
+  const [d, c] = await Promise.all([D.status(), C.status()]);
+  $("#b-sharing").hidden = false;
+  const on = [d.connected && "Drive", c.connected && "serveur"].filter(Boolean);
+  $("#sharing-sum").textContent = on.length ? `${on.join(" + ")} connecté${on.length > 1 ? "s" : ""}` : "à configurer";
+  $("#sharing-dot").classList.toggle("on", on.length > 0);
+  $("#drive-st").innerHTML = `<span class="ai">${GD_IC}</span>
+    <span class="at"><b>Google Drive <i class="gd${d.connected ? " on" : ""}"></i></b><small>${d.connected ? `Connecté : ${esc(d.email || "ton compte Google")}` : d.configured ? "Prêt : il reste à connecter ton compte Google" : "À configurer une seule fois (≈ 5 min)"}</small>
+    <em>Le plus simple : la vidéo part dans un dossier « Reco » de ton Drive, avec un lien que tout le monde peut ouvrir.</em></span>
+    ${d.connected ? '<button class="link" id="gd-x">Déconnecter</button>' : d.configured ? '<button class="btn small" id="gd-c">Connecter</button>' : '<button class="btn small" id="gd-setup">Configurer</button>'}`;
+  $("#cloud-st").innerHTML = `<span class="ai">${CL_IC}</span>
+    <span class="at"><b>Mon serveur Reco <i class="gd${c.connected ? " on" : ""}"></i></b><small>${c.connected ? `Connecté : ${esc(host(c.server))}` : "Non connecté"}</small>
+    <em>Comme Tella : page de partage, compteur de vues. Demande ton propre serveur Cloudflare (adresse et code d'invitation).</em></span>
+    ${c.connected ? '<button class="link" id="cl-x">Déconnecter</button>' : '<button class="btn small ghost" id="cl-c">Connecter</button>'}`;
+  $("#gd-setup")?.addEventListener("click", () => gsetup());
+  $("#gd-c")?.addEventListener("click", async (e) => {
+    e.target.disabled = true; e.target.textContent = "Termine dans ton navigateur…";
+    try { await D.connect(); toast("Google Drive connecté"); } catch (err) { toast(errMsg(err)); }
+    renderSharing(); refreshShareSubs();
+  });
+  $("#gd-x")?.addEventListener("click", async () => { if (confirm("Déconnecter Google Drive ? Les liens déjà partagés continuent de marcher.")) { await D.disconnect(); renderSharing(); refreshShareSubs(); } });
   $("#cl-c")?.addEventListener("click", () => connectCloud());
-  return s;
+  $("#cl-x")?.addEventListener("click", async () => { if (confirm("Déconnecter ton serveur Reco ? Les liens déjà publiés continuent de marcher.")) { await C.disconnect(); renderSharing(); refreshShareSubs(); } });
+}
+$("#b-sharing").onclick = () => { renderSharing(); $("#d-sharing").showModal(); };
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-close]"); if (b) b.closest("dialog")?.close(); });
+// assistant « Configurer Google Drive » ; résout true quand la clé Google est enregistrée
+function gsetup() {
+  return new Promise((resolve) => {
+    const d = $("#d-gsetup"); let ok = false;
+    $("#g-err").textContent = ""; d.showModal();
+    $("#g-file-b").onclick = () => $("#g-file").click();
+    $("#g-file").onchange = async (e) => {
+      const f = e.target.files[0]; e.target.value = "";
+      if (!f) return;
+      try { await D.setClient(await f.text()); ok = true; d.close(); toast("Clé Google enregistrée"); }
+      catch (err) { $("#g-err").textContent = errMsg(err); }
+    };
+    d.onclose = () => { renderSharing(); refreshShareSubs(); resolve(ok); };
+  });
+}
+async function refreshShareSubs() { // sous-titres des boutons de partage de l'écran « vidéo »
+  if (!LOCAL) return;
+  const [d, c] = await Promise.all([D.status(), C.status()]);
+  $("#x-gsub").textContent = d.connected ? `Vers ${d.email || "ton Drive"} · le lien est copié tout seul` : d.configured ? "Connexion à ton compte Google, puis envoi" : "À configurer une seule fois (≈ 5 min)";
+  $("#x-csub").textContent = c.connected ? `Sur ${host(c.server)} · page avec compteur de vues` : "Ton propre serveur Cloudflare (adresse et code)";
 }
 function connectCloud() { // fenêtre de connexion ; résout true si connecté
   return new Promise((resolve) => {
@@ -104,7 +138,7 @@ function connectCloud() { // fenêtre de connexion ; résout true si connecté
     $("#f-cloud").onsubmit = async (e) => {
       if (e.submitter?.value !== "ok") return;
       e.preventDefault(); $("#c-go").disabled = true; $("#c-err").textContent = "";
-      try { await C.connect({ url: $("#c-url").value.trim(), name: $("#c-name").value.trim(), code: $("#c-code").value }); $("#c-code").value = ""; done = true; resolve(true); d.close(); renderCloud(); toast("Serveur connecté"); }
+      try { await C.connect({ url: $("#c-url").value.trim(), name: $("#c-name").value.trim(), code: $("#c-code").value }); $("#c-code").value = ""; done = true; resolve(true); d.close(); renderSharing(); refreshShareSubs(); toast("Serveur connecté"); }
       catch (err) { $("#c-err").textContent = errMsg(err); }
       finally { $("#c-go").disabled = false; }
     };
@@ -127,11 +161,11 @@ if (LOCAL) C.onProgress(({ id, f }) => { if (X?.meta?.id === id) setProgress(f, 
 if (LOCAL) D.onProgress(({ id, f }) => { if (X?.meta?.id === id) setProgress(f, "Envoi sur Google Drive"); });
 async function shareDrive() {
   if (!X?.meta) return;
-  const s = await D.status();
-  if (!s.configured) { $("#x-err").textContent = "Google Drive n'est pas configuré dans cette version de Reco."; return; }
+  let s = await D.status();
+  if (!s.configured) { if (!(await gsetup())) return; s = await D.status(); }
   $("#x-err").textContent = ""; $("#x-gshare").disabled = true;
   try {
-    if (!s.connected) { $("#x-status").textContent = "Connexion à Google… (ton navigateur s'ouvre)"; await D.connect(); renderDrive(); }
+    if (!s.connected) { $("#x-status").textContent = "Connexion à Google… termine dans ton navigateur, puis reviens ici"; await D.connect(); renderSharing(); }
     setProgress(0, "Envoi sur Google Drive");
     const meta = await D.share(X.meta.id);
     uploaded(meta, true);
@@ -150,11 +184,11 @@ async function boot() {
     me = await L.me();
     $("#shell").hidden = false;
     $("#ws-name").textContent = `Espace de ${me.name}`;
-    $("#who").innerHTML = `<span class="av">${esc(me.name.slice(0, 1).toUpperCase())}</span><span class="nm edit" id="b-name" title="Changer ton prénom">${esc(me.name)}</span><button class="link" id="b-folder" title="${esc(me.folder)}">Dossier</button>`;
+    $("#who").innerHTML = `<span class="av" title="${esc(me.name)}">${esc(me.name.slice(0, 1).toUpperCase())}</span><span class="nm edit tx" id="b-name" title="Changer ton prénom">${esc(me.name)}</span><button class="link tx" id="b-folder" title="${esc(me.folder)}">Dossier</button>`;
     $("#b-folder").onclick = () => L.openFolder();
     $("#b-name").onclick = async () => { const n = prompt("Ton prénom", me.name); if (n && n.trim()) { await L.setName(n); boot(); } };
     $('#nav [data-f="all"]').hidden = true;
-    renderDrive(); renderCloud();
+    renderSharing();
     return loadLib();
   }
   try { me = await api("/api/me"); } catch { me = null; }
@@ -269,29 +303,54 @@ function probe(url) { // durée, taille et miniature d'une vidéo locale
 }
 
 // ───────── préparation ─────────
-const S = { mode: "screen+cam", corner: "bl", sys: true, shape: "square" };
+const QUALITIES = { "720": { h: 720 }, "1080": { h: 1080 }, "1440": { h: 1440 }, max: { h: 2160 } };
+const PREFS_KEY = "reco.prefs";
+const S = { mode: "screen+cam", corner: "bl", sys: true, shape: "square", quality: "1080", fps: 30 };
+try { Object.assign(S, JSON.parse(localStorage.getItem(PREFS_KEY) || "{}")); } catch {}
+if (!QUALITIES[S.quality]) S.quality = "1080";
+if (![30, 60].includes(S.fps)) S.fps = 30;
+const savePrefs = () => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(S)); } catch {} };
+// débit : assez pour garder le texte d'un écran net (≈ 7,5 Mb/s en 1080p à 30 i/s)
+const bitrateFor = (w, h, fps) => Math.round(Math.min(40e6, Math.max(2.5e6, w * h * fps * (fps > 30 ? 0.09 : 0.12))));
 let R = null; // session d'enregistrement
 
-$("#b-new").onclick = async () => {
+$("#b-new").onclick = () => openSetup();
+$("#b-new2").onclick = () => openSetup();
+async function openSetup() {
   show("v-setup"); $("#s-err").textContent = ""; $("#b-go").hidden = true; $("#pip-hint").hidden = true; $("#prev-hint").hidden = false;
   try { const t = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }).catch(() => navigator.mediaDevices.getUserMedia({ audio: true })); t.getTracks().forEach((x) => x.stop()); } catch {}
   const devs = await navigator.mediaDevices.enumerateDevices();
   const opt = (d, i, k) => `<option value="${d.deviceId}">${esc(d.label || `${k} ${i + 1}`)}</option>`;
   $("#s-cam").innerHTML = devs.filter((d) => d.kind === "videoinput").map((d, i) => opt(d, i, "Caméra")).join("");
   $("#s-mic").innerHTML = devs.filter((d) => d.kind === "audioinput").map((d, i) => opt(d, i, "Micro")).join("") + '<option value="none">Aucun micro</option>';
+  for (const [sel, key] of [["#s-cam", "cam"], ["#s-mic", "mic"]]) if (S[key] && [...$(sel).options].some((o) => o.value === S[key])) $(sel).value = S[key];
   refreshSetup();
-};
+}
 $("#b-cancel").onclick = () => { cleanup(); loadLib(); };
-$("#modes").onclick = (e) => { const b = e.target.closest(".mode"); if (b) { S.mode = b.dataset.mode; refreshSetup(); } };
-$("#corners").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.corner = b.dataset.c; refreshSetup(); R?.worker?.postMessage({ type: "cfg", cfg: { corner: S.corner } }); };
-$("#c-sys").onchange = (e) => (S.sys = e.target.checked);
-$("#shapes").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.shape = b.dataset.s; refreshSetup(); R?.worker?.postMessage({ type: "cfg", cfg: { shape: S.shape } }); };
+$("#modes").onclick = (e) => { const b = e.target.closest(".mode"); if (b) { S.mode = b.dataset.mode; savePrefs(); refreshSetup(); } };
+$("#corners").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.corner = b.dataset.c; savePrefs(); refreshSetup(); R?.worker?.postMessage({ type: "cfg", cfg: { corner: S.corner } }); };
+$("#c-sys").onchange = (e) => { S.sys = e.target.checked; savePrefs(); };
+$("#shapes").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.shape = b.dataset.s; savePrefs(); refreshSetup(); R?.worker?.postMessage({ type: "cfg", cfg: { shape: S.shape } }); };
+$("#s-quality").onchange = (e) => { S.quality = e.target.value; savePrefs(); refreshSetup(); };
+$("#fpss").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; S.fps = +b.dataset.fps; savePrefs(); refreshSetup(); };
+$("#s-cam").onchange = (e) => { S.cam = e.target.value; savePrefs(); };
+$("#s-mic").onchange = (e) => { S.mic = e.target.value; savePrefs(); };
+function outSize(srcW, srcH) { // taille de la vidéo finale : la source, réduite à la qualité choisie (dimensions paires)
+  const H = QUALITIES[S.quality].h, Wmax = S.quality === "max" ? 3840 : Math.round(H * 16 / 9);
+  const s = Math.min(1, H / srcH, Wmax / srcW);
+  return { w: Math.round(srcW * s / 2) * 2, h: Math.round(srcH * s / 2) * 2 };
+}
 function refreshSetup() {
   document.querySelectorAll(".mode").forEach((b) => b.classList.toggle("on", b.dataset.mode === S.mode));
   document.querySelectorAll("#corners button").forEach((b) => b.classList.toggle("on", b.dataset.c === S.corner));
   document.querySelectorAll("#shapes button").forEach((b) => b.classList.toggle("on", b.dataset.s === S.shape));
+  document.querySelectorAll("#fpss button").forEach((b) => b.classList.toggle("on", +b.dataset.fps === S.fps));
+  $("#s-quality").value = S.quality; $("#c-sys").checked = S.sys;
   $("#lab-cam").hidden = S.mode === "screen"; $("#lab-sys").hidden = S.mode === "cam"; $("#lab-corner").hidden = S.mode !== "screen+cam";
-  $("#b-prepare").textContent = S.mode === "cam" ? "Préparer la caméra" : "Choisir l'écran et préparer";
+  $("#b-prepare").textContent = R?.video ? "Appliquer les réglages" : S.mode === "cam" ? "Préparer la caméra" : "Choisir l'écran et préparer";
+  const cam = S.mode === "cam", { w, h } = outSize(cam ? 1920 : screen.width * devicePixelRatio, cam ? 1080 : screen.height * devicePixelRatio);
+  const mo = Math.round(bitrateFor(w, h, S.fps) * 60 / 8 / 1e6);
+  $("#q-hint").textContent = `${R?.size ? `${R.size.w} × ${R.size.h}` : `≈ ${w} × ${h}`} à ${S.fps} images par seconde · environ ${mo} Mo par minute`;
 }
 function fakeScreen() {
   if (new URLSearchParams(location.search).get("fakeScreen") === "demo") return demoScreen();
@@ -318,78 +377,112 @@ function demoScreen() { // faux écran présentable (captures du README)
   return c.captureStream(30);
 }
 
-$("#b-prepare").onclick = async () => {
-  $("#s-err").textContent = ""; cleanup();
-  R = { chunks: [], localSize: 0, paused: false, pausedMs: 0 };
+$("#b-prepare").onclick = () => prepare();
+async function prepare() {
+  $("#s-err").textContent = ""; cleanup(); $("#b-go").hidden = true;
+  if (!("VideoEncoder" in window) || !("MediaStreamTrackProcessor" in window)) { $("#s-err").textContent = "Pour enregistrer, ouvre Reco dans Chrome ou Edge sur ordinateur."; return; }
+  const fps = S.fps, Q = QUALITIES[S.quality];
+  R = { chunks: [], localSize: 0, paused: false, pausedMs: 0, epoch: 0, fps };
   try {
     if (S.mode !== "cam") {
-      R.display = TEST ? fakeScreen() : await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: S.sys, selfBrowserSurface: "exclude", surfaceSwitching: "include", systemAudio: "include" });
-      R.display.getVideoTracks()[0].addEventListener("ended", () => { if (R?.rec && R.rec.state !== "inactive") stopRec(); });
+      const cap = S.quality === "max" ? {} : { width: { max: Math.round(Q.h * 16 / 9) * 2 }, height: { max: Q.h * 2 } };
+      R.display = TEST ? fakeScreen() : await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: fps, max: fps }, ...cap }, audio: S.sys, selfBrowserSurface: "exclude", surfaceSwitching: "include", systemAudio: "include" });
+      R.display.getVideoTracks()[0].addEventListener("ended", () => { if (R?.recording) stopRec(); });
     }
-    if (S.mode !== "screen") R.cam = await navigator.mediaDevices.getUserMedia({ video: { deviceId: $("#s-cam").value ? { exact: $("#s-cam").value } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } });
+    if (S.mode !== "screen") {
+      const ch = S.mode === "cam" ? Math.min(Q.h, 1080) : Q.h > 1080 ? 1080 : 720;
+      R.cam = await navigator.mediaDevices.getUserMedia({ video: { deviceId: $("#s-cam").value ? { exact: $("#s-cam").value } : undefined, width: { ideal: Math.round(ch * 16 / 9) }, height: { ideal: ch }, frameRate: { ideal: fps } } });
+    }
     if ($("#s-mic").value !== "none") R.mic = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: $("#s-mic").value ? { exact: $("#s-mic").value } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   } catch (err) {
     $("#s-err").textContent = err.name === "NotAllowedError" ? "Partage refusé. Réessaie et autorise l'écran, la caméra ou le micro." : `Impossible de démarrer : ${errMsg(err)}`;
     cleanup(); return;
   }
-  let w = 1280, h = 720;
-  if (R.display) { const st = R.display.getVideoTracks()[0].getSettings(); const s = Math.min(1, 1920 / (st.width || 1920), 1080 / (st.height || 1080)); w = Math.round((st.width || 1920) * s / 2) * 2; h = Math.round((st.height || 1080) * s / 2) * 2; }
-  R.size = { w, h };
+  const src = R.display ? R.display.getVideoTracks()[0].getSettings() : R.cam.getVideoTracks()[0].getSettings();
+  R.size = outSize(src.width || 1920, src.height || 1080);
   R.worker = new Worker("/comp.js");
   const gen = new MediaStreamTrackGenerator({ kind: "video" });
-  const msg = { type: "start", cfg: { w, h, mode: S.mode, corner: S.corner, shape: S.shape, bubble: true, big: false, hasCam: !!R.cam }, out: gen.writable }, tr = [gen.writable];
+  const aTracks = [...(R.mic?.getAudioTracks() || []), ...(R.display?.getAudioTracks() || [])];
+  if (aTracks.length > 1) { R.ac = new AudioContext({ sampleRate: 48000 }); const dst = R.ac.createMediaStreamDestination(); aTracks.forEach((t) => R.ac.createMediaStreamSource(new MediaStream([t])).connect(dst)); R.audio = dst.stream.getAudioTracks()[0]; }
+  else R.audio = aTracks[0] || null;
+  const msg = { type: "start", cfg: { ...R.size, fps, mode: S.mode, corner: S.corner, shape: S.shape, bubble: true, big: false, hasAudio: !!R.audio }, out: gen.writable }, tr = [gen.writable];
   if (R.display) { msg.screen = new MediaStreamTrackProcessor({ track: R.display.getVideoTracks()[0] }).readable; tr.push(msg.screen); }
   if (R.cam) { msg.cam = new MediaStreamTrackProcessor({ track: R.cam.getVideoTracks()[0] }).readable; tr.push(msg.cam); }
-  R.worker.onmessage = (e) => { if (e.data.type === "thumb") R.thumb = e.data.blob; if (e.data.type === "error") console.warn("compositeur", e.data.message); };
+  if (R.audio) { msg.audio = new MediaStreamTrackProcessor({ track: R.audio }).readable; tr.push(msg.audio); }
+  R.worker.onmessage = onWorker;
   R.worker.postMessage(msg, tr);
   R.video = gen;
-  const aTracks = [...(R.mic?.getAudioTracks() || []), ...(R.display?.getAudioTracks() || [])];
-  if (aTracks.length > 1) { R.ac = new AudioContext(); const dst = R.ac.createMediaStreamDestination(); aTracks.forEach((t) => R.ac.createMediaStreamSource(new MediaStream([t])).connect(dst)); R.audio = dst.stream.getAudioTracks()[0]; }
-  else R.audio = aTracks[0] || null;
   $("#pv").srcObject = new MediaStream([gen]);
   $("#prev-hint").hidden = true; $("#b-go").hidden = false; $("#pip-hint").hidden = !(DESKTOP || "documentPictureInPicture" in window);
-};
+  refreshSetup();
+  $("#b-go").scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
 
 // ───────── enregistrement ─────────
-function pickMime() {
-  for (const m of ["video/mp4;codecs=avc1.640028,mp4a.40.2", "video/mp4;codecs=avc1,mp4a", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"])
-    if (MediaRecorder.isTypeSupported(m)) return m;
-  return "";
-}
 const elapsed = () => { if (!R?.t0) return 0; const now = R.paused ? R.pauseAt : performance.now(); return (now - R.t0 - R.pausedMs) / 1000; };
+function onWorker(e) {
+  const d = e.data, r = R;
+  if (!r) return;
+  if (d.type === "thumb") r.thumb = d.blob;
+  else if (d.type === "warn") toast(d.message);
+  else if (d.type === "data" && d.epoch === r.epoch) {
+    if (LOCAL) { r.localSize += d.buf.byteLength; r.up?.push(d.buf, d.pos); return; } // directement dans le fichier, sur le disque
+    const blob = new Blob([d.buf]);
+    if (r.localSize + blob.size <= LOCAL_MAX) { r.chunks.push(blob); r.localSize += blob.size; } else if (r.up) { r.chunks = []; r.localDropped = true; }
+    r.up?.push(blob);
+  } else if (d.type === "done" && d.epoch === r.epoch) onStopped(d);
+  else if (d.type === "error" && (d.epoch == null || d.epoch === r.epoch)) {
+    console.warn("compositeur", d.message);
+    if (r.recording || r.stopping) {
+      r.recording = r.stopping = false; clearInterval(r.tick); r.pip?.close(); r.up?.abort();
+      if (DESKTOP) window.recoDesktop.recording(false);
+      cleanup(); show("v-setup"); $("#b-go").hidden = true; $("#prev-hint").hidden = false;
+      $("#s-err").textContent = `L'enregistrement s'est arrêté : ${d.message}`;
+    }
+  }
+}
 
-$("#b-go").onclick = async () => {
-  await openPip(); // demande un clic : on l'ouvre tout de suite
-  R.mime = pickMime();
-  const ext = R.mime.includes("mp4") ? "mp4" : "webm";
-  R.up = await new Writer(ext).start().catch(() => null); // serveur : envoi pendant l'enregistrement ; local : écriture sur le disque
-  show("v-rec"); $("#rv").srcObject = new MediaStream([R.video]);
+$("#b-go").onclick = async () => { await openPip(); startTake(); }; // la mini-fenêtre demande un clic : on l'ouvre tout de suite
+async function startTake() {
+  const r = R, epoch = ++r.epoch;
+  r.chunks = []; r.localSize = 0; r.localDropped = false; r.thumb = null; r.paused = false; r.pausedMs = 0; r.t0 = 0;
+  r.up = await new Writer("mp4").start().catch(() => null); // local : écrit sur le disque ; serveur : envoi pendant l'enregistrement
+  if (R !== r || r.epoch !== epoch) return r.up?.abort();
+  if (LOCAL && !r.up) { $("#s-err").textContent = "Impossible d'écrire la vidéo dans ton dossier Vidéos."; return; }
+  show("v-rec"); $("#rv").srcObject = new MediaStream([r.video]); setPauseLabel();
+  $("#r-time").textContent = "0:00"; if (r.pip) r.pip.document.getElementById("t").textContent = "0:00";
   const c = $("#count"); c.hidden = false;
-  for (const n of [3, 2, 1]) { c.textContent = n; pipCount(n); await sleep(800); }
+  for (const n of [3, 2, 1]) { c.textContent = n; pipCount(n); await sleep(800); if (R !== r || r.epoch !== epoch) { c.hidden = true; pipCount(null); return; } }
   c.hidden = true; pipCount(null);
-  R.rec = new MediaRecorder(new MediaStream([R.video, ...(R.audio ? [R.audio] : [])]), { mimeType: R.mime, videoBitsPerSecond: 4_500_000, audioBitsPerSecond: 128_000 });
-  R.rec.ondataavailable = (e) => {
-    if (!e.data.size) return;
-    if (LOCAL && R.up) { R.localDropped = true; R.localSize += e.data.size; } // déjà sur le disque : pas de copie en mémoire
-    else if (R.localSize + e.data.size <= LOCAL_MAX) { R.chunks.push(e.data); R.localSize += e.data.size; } else if (R.up) { R.chunks = []; R.localDropped = true; }
-    R.up?.push(e.data);
-  };
-  R.rec.onstop = onStopped;
-  R.rec.start(1000); R.t0 = performance.now();
+  r.worker.postMessage({ type: "begin", epoch, bitrate: bitrateFor(r.size.w, r.size.h, r.fps), fragmented: !LOCAL });
+  r.recording = true; r.t0 = performance.now();
   if (DESKTOP && S.mode !== "cam") window.recoDesktop.recording(true); // la fenêtre principale se range
-  R.tick = setInterval(tick, 250); tick();
-};
+  clearInterval(r.tick); r.tick = setInterval(tick, 250); tick();
+}
 function tick() { const t = fmtDur(elapsed()); $("#r-time").textContent = t; if (R?.pip) R.pip.document.getElementById("t").textContent = t; }
+function setPauseLabel() {
+  const label = R?.paused ? "Reprendre" : "Pause";
+  $("#r-pause").textContent = label;
+  if (R?.pip) { R.pip.document.getElementById("p").textContent = label; R.pip.document.body.classList.toggle("paused", !!R.paused); }
+}
 function togglePause() {
-  if (!R?.rec) return;
-  if (R.rec.state === "recording") { R.rec.pause(); R.paused = true; R.pauseAt = performance.now(); }
-  else if (R.rec.state === "paused") { R.rec.resume(); R.pausedMs += performance.now() - R.pauseAt; R.paused = false; }
-  const label = R.paused ? "Reprendre" : "Pause";
-  $("#r-pause").textContent = label; if (R.pip) { R.pip.document.getElementById("p").textContent = label; R.pip.document.body.classList.toggle("paused", R.paused); }
+  if (!R?.recording) return;
+  if (!R.paused) { R.worker.postMessage({ type: "pause" }); R.paused = true; R.pauseAt = performance.now(); }
+  else { R.worker.postMessage({ type: "resume" }); R.pausedMs += performance.now() - R.pauseAt; R.paused = false; }
+  setPauseLabel();
+}
+// « Recommencer » : jette la prise en cours et relance le compte à rebours, sans redemander l'écran ni la caméra
+async function retake() {
+  if (!R?.recording) return;
+  R.recording = false; clearInterval(R.tick);
+  R.worker.postMessage({ type: "discard" }); R.up?.abort(); R.up = null;
+  toast("Prise effacée, on recommence");
+  await startTake();
 }
 $("#r-pause").onclick = togglePause;
 $("#r-stop").onclick = () => stopRec();
-function stopRec() { if (R?.rec && R.rec.state !== "inactive") { R.duration = elapsed(); R.rec.stop(); } }
+$("#r-retake").onclick = () => retake();
+function stopRec() { if (R?.recording) { R.recording = false; R.stopping = true; R.duration = elapsed(); clearInterval(R.tick); R.worker.postMessage({ type: "finish" }); } }
 
 // ───────── mini-fenêtre flottante (Document Picture-in-Picture) ─────────
 const DESKTOP = !!window.recoDesktop; // dans l'appli de bureau (Electron)
@@ -397,7 +490,7 @@ async function openPip() {
   if (!DESKTOP && !("documentPictureInPicture" in window)) return;
   try {
     // appli de bureau : vraie fenêtre système toujours au premier plan, invisible dans la vidéo ; navigateur : Document PiP
-    const w = DESKTOP ? window.open("", "reco-pip", `width=270,height=${R.cam ? 350 : 170}`) : await documentPictureInPicture.requestWindow({ width: 260, height: R.cam ? 330 : 150 });
+    const w = DESKTOP ? window.open("", "reco-pip", `width=270,height=${R.cam ? 400 : 220}`) : await documentPictureInPicture.requestWindow({ width: 260, height: R.cam ? 380 : 200 });
     if (!w) return;
     w.document.title = "Reco";
     R.pip = w;
@@ -413,11 +506,13 @@ async function openPip() {
     w.document.body.innerHTML = `${R.cam ? '<video id="v" autoplay muted playsinline></video>' : ""}
       <div class="bar"><span class="dot"></span><span id="t">0:00</span></div>
       <div class="btns"><button id="p">Pause</button><button class="stop" id="s">Stop</button></div>
+      <div class="btns"><button id="rt" title="Efface cette prise et recommence tout de suite">↺ Recommencer</button></div>
       ${S.mode === "screen+cam" ? '<div class="mini"><button id="hb">Masquer bulle</button><button id="sz">Grande bulle</button><button id="mv">Déplacer</button></div>' : ""}
       <div class="count" id="c"></div>`;
     if (R.cam) w.document.getElementById("v").srcObject = R.cam;
     w.document.getElementById("p").onclick = togglePause;
     w.document.getElementById("s").onclick = () => stopRec();
+    w.document.getElementById("rt").onclick = () => retake();
     const send = (cfg) => R.worker.postMessage({ type: "cfg", cfg });
     if (S.mode === "screen+cam") {
       let bubble = true, big = false; const order = ["bl", "br", "tr", "tl"];
@@ -430,30 +525,33 @@ async function openPip() {
 }
 function pipCount(n) { const c = R?.pip?.document.getElementById("c"); if (c) { c.style.display = n ? "flex" : "none"; c.textContent = n || ""; } }
 
-// ───────── fin d'enregistrement : finalisation de l'envoi ─────────
-async function onStopped() {
-  clearInterval(R.tick); R.pip?.close(); stopTracks();
+// ───────── fin d'enregistrement : finalisation du fichier ─────────
+async function onStopped(d) {
+  const rec = R;
+  rec.stopping = false; rec.pip?.close(); stopTracks();
   if (DESKTOP) window.recoDesktop.recording(false);
-  const type = R.mime.split(";")[0] || "video/webm", rec = R;
-  const localUrl = rec.localDropped ? null : URL.createObjectURL(new Blob(rec.chunks, { type }));
+  const type = "video/mp4", duration = d.duration || rec.duration;
+  const localUrl = LOCAL || rec.localDropped ? null : URL.createObjectURL(new Blob(rec.chunks, { type }));
   const title = `Enregistrement du ${new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} à ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
-  openReview({ localUrl, title, duration: rec.duration, download: localUrl });
+  openReview({ localUrl, title, duration, download: localUrl, recorded: true });
+  R = null;
   let up = rec.up; X.up = up;
   try {
-    if (!up) { up = X.up = await new Writer(type.includes("mp4") ? "mp4" : "webm").start(); up.push(new Blob(rec.chunks, { type })); }
+    if (!up) { up = X.up = await new Writer("mp4").start(); up.push(new Blob(rec.chunks, { type })); }
     const total = up.sent + up.pendingSize, label = LOCAL ? "Enregistrement sur ton PC" : "Finalisation de l'envoi";
     up.onprogress = () => setProgress(up.sent / Math.max(total, 1), label);
     setProgress(up.sent / Math.max(total, 1), label);
-    const meta = await up.finish({ title: $("#x-title").value, duration: rec.duration, width: rec.size.w, height: rec.size.h });
+    const meta = await up.finish({ title: $("#x-title").value, duration, width: rec.size.w, height: rec.size.h, fps: rec.fps });
     uploaded(await saveThumb(meta, rec.thumb));
   } catch (err) { uploadFailed(err, up); }
 }
 
 // ───────── écran « vidéo » : envoi, lien, titre, découpe ─────────
 let X = null; // vidéo affichée
-function openReview({ meta = null, localUrl = null, title = "", duration = 0, download = null }) {
+function openReview({ meta = null, localUrl = null, title = "", duration = 0, download = null, recorded = false }) {
   show("v-review");
   X = { meta, duration: meta?.duration || duration || 0, download, localUrl };
+  $("#x-retake").hidden = !recorded; $("#x-info").textContent = "";
   if (localUrl || meta) $("#xv").src = localUrl || fileOf(meta); else $("#xv").removeAttribute("src");
   $("#x-gshare").hidden = true; $("#x-cshare").hidden = true; $("#x-reveal").hidden = true;
   $("#x-title").value = meta?.title || title;
@@ -466,12 +564,14 @@ function setProgress(f, label) {
 }
 function uploaded(meta, silent) {
   X.meta = meta; X.duration = meta.duration || X.duration;
+  $("#x-info").textContent = [meta.width && `${meta.width} × ${meta.height}`, meta.fps && `${meta.fps} images/s`, X.duration && fmtDur(X.duration), meta.size && fmtSize(meta.size)].filter(Boolean).join(" · ");
   if (LOCAL) {
     if (!X.localUrl && !$("#xv").getAttribute("src")) $("#xv").src = meta.url;
     $("#x-prog").hidden = true; $("#x-done").disabled = false; $("#x-trim").hidden = true; $("#x-dl").hidden = true;
     const link = meta.cloud?.link || meta.drive?.link;
     $("#x-status").textContent = meta.cloud ? "✓ Enregistrée sur ton PC et publiée sur ton serveur" : meta.drive ? "✓ Enregistrée sur ton PC et partagée sur Google Drive" : "✓ Enregistrée sur ton PC. Tu veux la partager ?";
     $("#x-share").hidden = !link; $("#x-cshare").hidden = !!meta.cloud; $("#x-gshare").hidden = !!meta.drive; $("#x-reveal").hidden = false;
+    refreshShareSubs();
     if (link) { $("#x-link").value = link; $("#x-open").href = link; }
     return;
   }
@@ -512,6 +612,12 @@ $("#x-cshare").onclick = () => publishCloud();
 $("#x-reveal").onclick = () => X?.meta && L.reveal(X.meta.id);
 $("#x-copy").onclick = async () => { await saveReview().catch(() => {}); await navigator.clipboard.writeText($("#x-link").value); toast("Lien copié"); };
 $("#x-dl").onclick = () => { const a = document.createElement("a"); a.href = X.download || `/f/${X.meta.id}`; a.download = `${$("#x-title").value || "video"}`; a.click(); };
+$("#x-retake").onclick = async () => {
+  if (!confirm("Supprimer cette vidéo et en enregistrer une nouvelle avec les mêmes réglages ?")) return;
+  if (X?.meta) await deleteVideo(X.meta.id).catch(() => {}); else X?.up?.abort();
+  X = null; cleanup();
+  await openSetup(); prepare();
+};
 $("#x-discard").onclick = async () => {
   if (!confirm("Supprimer cette vidéo ? Le lien ne marchera plus.")) return;
   if (X?.meta) await deleteVideo(X.meta.id).catch(() => {}); else X?.up?.abort();
@@ -524,6 +630,6 @@ function stopTracks() {
   R?.video?.stop?.(); R?.ac?.close?.();
 }
 function cleanup() { if (R) { clearInterval(R.tick); R.pip?.close(); stopTracks(); } R = null; $("#pv").srcObject = null; }
-window.addEventListener("beforeunload", (e) => { if ((R?.rec && R.rec.state !== "inactive") || (X && !X.meta)) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", (e) => { if (R?.recording || R?.stopping || (X && !X.meta)) { e.preventDefault(); e.returnValue = ""; } });
 
 boot();

@@ -25,7 +25,7 @@
 
 1. **Appli de bureau, sans serveur** (le plus simple) : tu installes Reco, tu enregistres, la vidéo est **sauvegardée sur ton PC** (dossier `Vidéos\Reco`). À la fin de l'enregistrement, tu choisis comment la partager :
    - **Google Drive** : la vidéo part sur *ton* Drive (15 Go gratuits) et le lien est copié ;
-   - **Mon serveur Reco** : pour avoir **tout comme Tella** (page de partage, vues, bibliothèque en ligne, aperçu WhatsApp), publie sur *ton propre serveur Cloudflare* (voir « Installation » ci-dessous ; Cloudflare demande une carte bancaire pour activer le stockage R2, gratuit jusqu'à 10 Go). Dans l'appli : barre latérale > *Serveur Reco* > *Connecter* (adresse, prénom, code d'invitation).
+   - **Mon serveur Reco** : pour avoir **tout comme Tella** (page de partage, vues, bibliothèque en ligne, aperçu WhatsApp), publie sur *ton propre serveur Cloudflare* (voir « Installation » ci-dessous ; Cloudflare demande une carte bancaire pour activer le stockage R2, gratuit jusqu'à 10 Go). Dans l'appli : barre latérale > *Partage* > *Mon serveur Reco* > *Connecter* (adresse, prénom, code d'invitation).
 2. **Site web seul** (sur ton serveur Cloudflare) : enregistrement dans Chrome ou Edge, sans rien installer.
 
 ## Appli de bureau (Windows et Mac)
@@ -34,7 +34,12 @@ Comme Tella, Reco existe en **appli à installer** (`desktop/`, Electron). Elle 
 - **son propre sélecteur** d'écran ou de fenêtre, avec miniatures, et le **son de l'ordinateur** capturé directement ;
 - une **fenêtre de contrôle toujours au premier plan et invisible dans la vidéo** (chrono, pause, stop, bulle) ;
 - la fenêtre principale qui **se range pendant l'enregistrement** et revient à l'arrêt ;
-- une icône dans la barre système et le raccourci **Ctrl+Maj+R** (lancer / arrêter).
+- une icône dans la barre système et le raccourci **Ctrl+Maj+R** (lancer / arrêter) ;
+- **« Recommencer »** pendant l'enregistrement (efface la prise et relance le compte à rebours, sans redemander l'écran) et **« Refaire »** sur l'écran de fin ;
+- le choix de la **qualité** (720p, 1080p, 1440p ou la résolution de l'écran jusqu'à 4K) et des **images par seconde** (30 ou 60), mémorisés d'une fois sur l'autre ;
+- une interface qui s'adapte aux petites fenêtres (la barre latérale se réduit à des icônes).
+
+**Cadence fixe** : la vidéo est encodée par Reco lui-même (WebCodecs H.264 + AAC, mise en MP4 par [mp4-muxer](https://github.com/Vanilagy/mp4-muxer)) et non par `MediaRecorder`. Chaque image porte l'horodatage n / fps ; si l'écran ou la caméra prend du retard, l'image précédente est répétée. Résultat : une vidéo à 30 ou 60 i/s **constants**, que les logiciels de montage lisent sans décalage, avec un son recalé sur la même horloge. Les pauses ne laissent aucun trou.
 
 Elle fonctionne seule (vidéos sur le PC). Le site d'un serveur Reco propose aussi un lien **« Télécharger l'app »** (`/download`), qui sert les installateurs déposés dans R2 :
 ```bash
@@ -47,7 +52,7 @@ L'installateur n'est pas signé numériquement : au premier lancement, Windows a
 
 **Fabriquer les installateurs** : l'onglet *Actions* du dépôt (workflow « Appli de bureau ») produit le `.dmg` et le `.exe` sur les machines de GitHub et vérifie que l'appli démarre. Pousser un tag `v1.0.1` publie une *release* avec les fichiers.
 
-**Partage Google Drive** : crée un projet sur console.cloud.google.com, active *Google Drive API*, configure l'écran de consentement (champ d'accès `drive.file` uniquement, puis *Publier*), crée un *ID client OAuth* de type **Application de bureau**, et mets-le dans `desktop/google-client.json` (`{"client_id": "…", "client_secret": "…"}`) ou dans le secret GitHub `GOOGLE_CLIENT_JSON` pour les builds automatiques.
+**Partage Google Drive** : dans l'appli, *Partage* > *Google Drive* > *Configurer* ouvre un assistant en 5 étapes (avec les liens directs vers Google Cloud) et importe le fichier `client_secret_….json`. Pour que tes potes n'aient rien à configurer, intègre plutôt ta clé à l'installateur : crée un projet sur console.cloud.google.com, active *Google Drive API*, configure l'écran de consentement (champ d'accès `drive.file` uniquement, puis *Publier*), crée un *ID client OAuth* de type **Application de bureau**, et mets-le dans `desktop/google-client.json` (`{"client_id": "…", "client_secret": "…"}`) ou dans le secret GitHub `GOOGLE_CLIENT_JSON` pour les builds automatiques.
 
 ## Combien ça coûte ?
 

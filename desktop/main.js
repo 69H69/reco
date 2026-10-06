@@ -32,9 +32,10 @@ function origin(u) { try { return new URL(u).origin; } catch { return ""; } }
 
 function createMain() {
   win = new BrowserWindow({
-    width: 1280, height: 820, minWidth: 900, minHeight: 600, title: "Reco", icon: ICON,
+    width: 1280, height: 820, minWidth: 720, minHeight: 540, title: "Reco", icon: ICON,
     backgroundColor: "#fdfdfd", autoHideMenuBar: true, show: false,
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true,
+      backgroundThrottling: false, // la fenêtre est réduite pendant l'enregistrement : rien ne doit ralentir
       additionalArguments: LOCAL_MODE() ? ["--reco-local"] : [] },
   });
   win.once("ready-to-show", () => win.show());
@@ -44,7 +45,7 @@ function createMain() {
   win.webContents.setWindowOpenHandler(({ url, frameName }) => {
     if (frameName === "reco-pip") {
       return { action: "allow", overrideBrowserWindowOptions: {
-        width: 270, height: 350, minWidth: 220, minHeight: 140, alwaysOnTop: true, title: "Reco", icon: ICON,
+        width: 270, height: 400, minWidth: 220, minHeight: 160, alwaysOnTop: true, title: "Reco", icon: ICON,
         backgroundColor: "#1c1917", autoHideMenuBar: true, minimizable: false, maximizable: false, fullscreenable: false } };
     }
     if (/^https?:/.test(url)) shell.openExternal(url);

@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld("recoDesktop", {
   recording: (on) => ipcRenderer.send("recording", !!on),
   lib: {
     me: () => inv("local:me"), setName: (n) => inv("local:setName", n), list: () => inv("local:list"),
-    start: (ext) => inv("local:start", ext), chunk: (id, buf) => inv("local:chunk", id, buf), finish: (id, m) => inv("local:finish", id, m),
+    start: (ext) => inv("local:start", ext), chunk: (id, buf, pos) => inv("local:chunk", id, buf, pos), finish: (id, m) => inv("local:finish", id, m),
     abort: (id) => inv("local:abort", id), thumb: (id, buf) => inv("local:thumb", id, buf),
     importFile: (file, m) => inv("local:import", webUtils.getPathForFile(file), m),
     patch: (id, b) => inv("local:patch", id, b), del: (id) => inv("local:delete", id),
@@ -20,6 +20,6 @@ contextBridge.exposeInMainWorld("recoDesktop", {
   },
   drive: {
     status: () => inv("drive:status"), connect: () => inv("drive:connect"), disconnect: () => inv("drive:disconnect"),
-    share: (id) => inv("drive:share", id), onProgress: (cb) => ipcRenderer.on("drive:progress", (e, d) => cb(d)),
+    share: (id) => inv("drive:share", id), setClient: (json) => inv("drive:setClient", json), onProgress: (cb) => ipcRenderer.on("drive:progress", (e, d) => cb(d)),
   },
 });
