@@ -1,5 +1,5 @@
-// Reco — serveur : connexion par code d'invitation, envoi des vidéos par morceaux vers R2,
-// liens de partage publics (/v/:id), lecture avec support Range (/f/:id), miniatures (/t/:id).
+// Reco — server: sign-in with an invite code, chunked video uploads to R2,
+// public share links (/v/:id), playback with Range support (/f/:id), thumbnails (/t/:id).
 
 const ID_RE = /^[A-Za-z0-9]{12}$/;
 const TYPES = { mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime" };
@@ -22,7 +22,7 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-// ── sessions signées (HMAC-SHA256) ──
+// ── signed sessions (HMAC-SHA256) ──
 async function hmac(secret, data) {
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", key, enc.encode(data));
@@ -60,10 +60,10 @@ async function getMeta(env, id) {
   return o ? o.json() : null;
 }
 
-// ── lecture vidéo avec Range (indispensable pour l'avance rapide et Safari) ──
+// ── video playback with Range (required for seeking and for Safari) ──
 async function serveObject(req, env, key, contentType) {
   const head = await env.VIDEOS.head(key);
-  if (!head) return new Response("Introuvable", { status: 404 });
+  if (!head) return new Response("Not found", { status: 404 });
   const size = head.size;
   const range = req.headers.get("range");
   const base = { "accept-ranges": "bytes", "content-type": contentType, "cache-control": "public, max-age=86400" };
@@ -86,30 +86,30 @@ async function serveObject(req, env, key, contentType) {
 
 function playerPage(origin, meta) {
   const url = `${origin}/v/${meta.id}`;
-  const date = new Date(meta.created).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+  const date = new Date(meta.created).toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
   const d = (meta.trimEnd || meta.duration || 0) - (meta.trimStart || 0);
   const dur = d > 0 ? `${Math.floor(d / 60)}:${String(Math.floor(d % 60)).padStart(2, "0")}` : "";
   const views = meta.views || 0;
   const frag = meta.trimStart || meta.trimEnd ? `#t=${meta.trimStart || 0}${meta.trimEnd ? "," + meta.trimEnd : ""}` : "";
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(meta.title)} · Reco</title>
 <meta property="og:type" content="video.other"><meta property="og:title" content="${esc(meta.title)}">
-<meta property="og:description" content="Vidéo de ${esc(meta.author)}${dur ? " · " + dur : ""}">
+<meta property="og:description" content="Video by ${esc(meta.author)}${dur ? " · " + dur : ""}">
 <meta property="og:url" content="${esc(url)}"><meta property="og:image" content="${esc(origin)}/t/${meta.id}">
 <meta property="og:video" content="${esc(origin)}/f/${meta.id}"><meta property="og:video:type" content="${esc(meta.contentType)}">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head>
 <body class="player">
 <header class="pbar"><a class="brand" href="/"><span class="logo"></span>Reco</a>
-<div class="pact"><a class="btn ghost" href="/f/${meta.id}" download="${esc(meta.title)}.${meta.ext}">Télécharger</a><button class="btn" id="copy">Copier le lien</button></div></header>
+<div class="pact"><a class="btn ghost" href="/f/${meta.id}" download="${esc(meta.title)}.${meta.ext}">Download</a><button class="btn" id="copy">Copy link</button></div></header>
 <main class="pwrap">
 <video id="pv" controls playsinline preload="metadata" poster="/t/${meta.id}" src="/f/${meta.id}${frag}"></video>
 <aside class="pside"><h1>${esc(meta.title)}</h1>
 <div class="pauthor"><span class="avatar">${esc((meta.author || "?").slice(0, 1).toUpperCase())}</span><div><b>${esc(meta.author)}</b><br><span class="muted">${esc(date)}</span></div></div>
-<div class="pstats">${dur ? `<span><b>${dur}</b> de vidéo</span>` : ""}<span><b>${views}</b> vue${views > 1 ? "s" : ""}</span></div></aside>
+<div class="pstats">${dur ? `<span>Length <b>${dur}</b></span>` : ""}<span><b>${views}</b> view${views === 1 ? "" : "s"}</span></div></aside>
 </main>
-<p class="pfoot">Enregistré avec <a href="/">Reco</a></p>
-<div class="toast" id="toast">Lien copié</div>
+<p class="pfoot">Recorded with <a href="/">Reco</a></p>
+<div class="toast" id="toast">Link copied</div>
 <script>
 const v=document.getElementById("pv"),T0=${Number(meta.trimStart) || 0},T1=${Number(meta.trimEnd) || 0};let counted=false;
 v.addEventListener("loadedmetadata",()=>{if(T0&&v.currentTime<T0)v.currentTime=T0});
@@ -128,30 +128,30 @@ export default {
     // ── public ──
     if (p.startsWith("/v/")) {
       const meta = await getMeta(env, p.slice(3));
-      if (!meta) return new Response("Cette vidéo n'existe pas (ou a été supprimée).", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+      if (!meta) return new Response("This video does not exist (or was deleted).", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
       return new Response(playerPage(url.origin, meta), { headers: { "content-type": "text/html; charset=utf-8" } });
     }
     if (p.startsWith("/f/") && (m === "GET" || m === "HEAD")) {
       const meta = await getMeta(env, p.slice(3));
-      if (!meta) return new Response("Introuvable", { status: 404 });
+      if (!meta) return new Response("Not found", { status: 404 });
       return serveObject(req, env, meta.key, meta.contentType);
     }
     if (p.startsWith("/t/") && (m === "GET" || m === "HEAD")) {
       const id = p.slice(3);
-      if (!ID_RE.test(id)) return new Response("Introuvable", { status: 404 });
+      if (!ID_RE.test(id)) return new Response("Not found", { status: 404 });
       return serveObject(req, env, `t/${id}.jpg`, "image/jpeg");
     }
 
     const vw = p.match(/^\/api\/view\/([A-Za-z0-9]{12})$/);
     if (vw && m === "POST") {
       const meta = await getMeta(env, vw[1]);
-      if (!meta) return bad("Introuvable.", 404);
+      if (!meta) return bad("Not found.", 404);
       meta.views = (meta.views || 0) + 1;
       await env.VIDEOS.put(`m/${meta.id}.json`, JSON.stringify(meta), { httpMetadata: { contentType: "application/json" } });
       return json({ ok: true });
     }
 
-    // ── appli de bureau : page de choix + fichiers déposés dans R2 (apps/…) ──
+    // ── desktop app: download page + installers stored in R2 (apps/…) ──
     const APPS = {
       windows: { key: "apps/Reco-Setup.exe", name: "Reco-Setup.exe" },
       "mac-arm64": { key: "apps/Reco-arm64.dmg", name: "Reco-arm64.dmg" },
@@ -160,30 +160,30 @@ export default {
     const dl = p.match(/^\/download\/(windows|mac-arm64|mac-intel)$/);
     if (dl && (m === "GET" || m === "HEAD")) {
       const a = APPS[dl[1]], obj = await env.VIDEOS.get(a.key);
-      if (!obj) return new Response("Cette version n'est pas encore disponible sur ce serveur.", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+      if (!obj) return new Response("This version is not available on this server yet.", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
       return new Response(m === "HEAD" ? null : obj.body, { headers: { "content-type": "application/octet-stream", "content-length": String(obj.size), "content-disposition": `attachment; filename="${a.name}"` } });
     }
     if (p === "/download" && m === "GET") {
       const has = Object.fromEntries(await Promise.all(Object.entries(APPS).map(async ([k, a]) => [k, !!(await env.VIDEOS.head(a.key))])));
       const ua = req.headers.get("user-agent") || "", mac = /Macintosh|Mac OS X/.test(ua);
       const card = (k, t, sub) => has[k] ? `<a class="dlc${(mac ? k.startsWith("mac") : k === "windows") ? " rec" : ""}" href="/download/${k}"><b>${t}</b><span class="muted">${sub}</span></a>` : "";
-      const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Télécharger Reco</title>
+      const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Download Reco</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head><body class="player">
 <header class="pbar"><a class="brand" href="/"><span class="logo"></span>Reco</a></header>
-<main class="dlw"><h1>Télécharger Reco</h1><p class="muted">L'appli pour enregistrer ton écran et ta caméra, avec une fenêtre de contrôle toujours visible (et invisible dans la vidéo).</p>
-<div class="dlg">${card("windows", "Windows", "Windows 10 et 11")}${card("mac-arm64", "Mac Apple Silicon", "Puces M1, M2, M3, M4")}${card("mac-intel", "Mac Intel", "Mac d'avant 2021")}</div>
-${Object.values(has).some(Boolean) ? "" : '<p class="muted">Aucune version n\'est encore disponible sur ce serveur.</p>'}
-<div class="dln"><b>Au premier lancement</b><p class="muted">Windows : « Informations complémentaires », puis « Exécuter quand même ». Mac : glisse Reco dans Applications, puis clic droit sur Reco &gt; Ouvrir. Ensuite, colle l'adresse de ce site : <b>${esc(url.origin)}</b></p></div>
+<main class="dlw"><h1>Download Reco</h1><p class="muted">The app to record your screen and camera, with a control window that stays on top (and never shows up in the video).</p>
+<div class="dlg">${card("windows", "Windows", "Windows 10 and 11")}${card("mac-arm64", "Mac Apple Silicon", "M1, M2, M3, M4 chips")}${card("mac-intel", "Mac Intel", "Macs from before 2021")}</div>
+${Object.values(has).some(Boolean) ? "" : '<p class="muted">No version is available on this server yet.</p>'}
+<div class="dln"><b>First launch</b><p class="muted">Windows: “More info”, then “Run anyway”. Mac: drag Reco into Applications, then right-click Reco &gt; Open.</p></div>
 </main></body></html>`;
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
     }
 
-    // ── connexion ──
+    // ── sign-in ──
     if (p === "/api/login" && m === "POST") {
       const body = await req.json().catch(() => ({}));
       const name = String(body.name || "").trim().slice(0, 40);
-      if (!name) return bad("Indique ton prénom.");
-      if (!env.INVITE_CODE || !safeEqual(String(body.code || ""), env.INVITE_CODE)) return bad("Code d'invitation incorrect.", 401);
+      if (!name) return bad("Enter your first name.");
+      if (!env.INVITE_CODE || !safeEqual(String(body.code || ""), env.INVITE_CODE)) return bad("Wrong invite code.", 401);
       const v = await makeSession(env, name);
       return json({ ok: true, name }, 200, { "set-cookie": `${COOKIE}=${v}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${30 * 24 * 3600}` });
     }
@@ -191,17 +191,17 @@ ${Object.values(has).some(Boolean) ? "" : '<p class="muted">Aucune version n\'es
       return json({ ok: true }, 200, { "set-cookie": `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0` });
     }
 
-    // ── tout le reste de /api demande une session ──
+    // ── everything else under /api requires a session ──
     if (!p.startsWith("/api/")) return env.ASSETS.fetch(req);
     const user = await readSession(req, env);
-    if (!user) return bad("Non connecté.", 401);
+    if (!user) return bad("Not signed in.", 401);
 
     if (p === "/api/me") return json({ name: user.name });
 
     if (p === "/api/upload/start" && m === "POST") {
       const body = await req.json().catch(() => ({}));
       const ext = body.ext in TYPES ? body.ext : null;
-      if (!ext) return bad("Format non pris en charge.");
+      if (!ext) return bad("Unsupported format.");
       const id = newId();
       const key = `v/${id}.${ext}`;
       const up = await env.VIDEOS.createMultipartUpload(key, { httpMetadata: { contentType: TYPES[ext] } });
@@ -212,9 +212,9 @@ ${Object.values(has).some(Boolean) ? "" : '<p class="muted">Aucune version n\'es
       const key = url.searchParams.get("key") || "";
       const uploadId = url.searchParams.get("uploadId") || "";
       const n = Number(url.searchParams.get("n"));
-      if (!KEY_RE.test(key) || !uploadId || !(n >= 1 && n <= 10000)) return bad("Paramètres invalides.");
+      if (!KEY_RE.test(key) || !uploadId || !(n >= 1 && n <= 10000)) return bad("Invalid parameters.");
       const buf = await req.arrayBuffer();
-      if (!buf.byteLength || buf.byteLength > MAX_PART) return bad("Morceau trop gros.");
+      if (!buf.byteLength || buf.byteLength > MAX_PART) return bad("Chunk too large.");
       const part = await env.VIDEOS.resumeMultipartUpload(key, uploadId).uploadPart(n, buf);
       return json({ partNumber: part.partNumber, etag: part.etag });
     }
@@ -222,16 +222,16 @@ ${Object.values(has).some(Boolean) ? "" : '<p class="muted">Aucune version n\'es
     if (p === "/api/upload/complete" && m === "POST") {
       const b = await req.json().catch(() => ({}));
       const { id, key, uploadId, parts } = b;
-      if (!ID_RE.test(id || "") || key !== `v/${id}.${key?.split(".").pop()}` || !Array.isArray(parts) || !parts.length) return bad("Paramètres invalides.");
+      if (!ID_RE.test(id || "") || key !== `v/${id}.${key?.split(".").pop()}` || !Array.isArray(parts) || !parts.length) return bad("Invalid parameters.");
       const ext = key.split(".").pop();
-      if (!(ext in TYPES)) return bad("Format non pris en charge.");
+      if (!(ext in TYPES)) return bad("Unsupported format.");
       const obj = await env.VIDEOS.resumeMultipartUpload(key, uploadId).complete(parts);
       const meta = {
         id, key, ext, contentType: TYPES[ext], size: obj.size,
-        title: String(b.title || "Sans titre").trim().slice(0, 120) || "Sans titre",
+        title: String(b.title || "Untitled").trim().slice(0, 120) || "Untitled",
         author: user.name, created: Date.now(),
         duration: Math.max(0, Math.min(Number(b.duration) || 0, 6 * 3600)),
-        width: Number(b.width) || null, height: Number(b.height) || null,
+        width: Number(b.width) || null, height: Number(b.height) || null, fps: Number(b.fps) || null,
       };
       await env.VIDEOS.put(`m/${id}.json`, JSON.stringify(meta), { httpMetadata: { contentType: "application/json" } });
       return json(meta);
@@ -246,8 +246,8 @@ ${Object.values(has).some(Boolean) ? "" : '<p class="muted">Aucune version n\'es
     const tm = p.match(/^\/api\/thumb\/([A-Za-z0-9]{12})$/);
     if (tm && m === "PUT") {
       const buf = await req.arrayBuffer();
-      if (!buf.byteLength || buf.byteLength > 2 * 1024 * 1024) return bad("Miniature invalide.");
-      if (!(await getMeta(env, tm[1]))) return bad("Vidéo inconnue.", 404);
+      if (!buf.byteLength || buf.byteLength > 2 * 1024 * 1024) return bad("Invalid thumbnail.");
+      if (!(await getMeta(env, tm[1]))) return bad("Unknown video.", 404);
       await env.VIDEOS.put(`t/${tm[1]}.jpg`, buf, { httpMetadata: { contentType: "image/jpeg" } });
       return json({ ok: true });
     }
@@ -268,8 +268,8 @@ ${Object.values(has).some(Boolean) ? "" : '<p class="muted">Aucune version n\'es
     const vm = p.match(/^\/api\/videos\/([A-Za-z0-9]{12})$/);
     if (vm) {
       const meta = await getMeta(env, vm[1]);
-      if (!meta) return bad("Vidéo inconnue.", 404);
-      if ((m === "PATCH" || m === "DELETE") && meta.author.toLowerCase() !== user.name.toLowerCase()) return bad("Seul l'auteur peut modifier ou supprimer cette vidéo.", 403);
+      if (!meta) return bad("Unknown video.", 404);
+      if ((m === "PATCH" || m === "DELETE") && meta.author.toLowerCase() !== user.name.toLowerCase()) return bad("Only the author can edit or delete this video.", 403);
       if (m === "PATCH") {
         const b = await req.json().catch(() => ({}));
         meta.title = String(b.title || meta.title).trim().slice(0, 120) || meta.title;
@@ -289,6 +289,6 @@ ${Object.values(has).some(Boolean) ? "" : '<p class="muted">Aucune version n\'es
         return json({ ok: true });
       }
     }
-    return bad("Introuvable.", 404);
+    return bad("Not found.", 404);
   },
 };

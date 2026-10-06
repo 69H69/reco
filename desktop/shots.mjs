@@ -1,5 +1,5 @@
-// Captures de l'interface à plusieurs tailles de fenêtre (contrôle visuel de la mise en page).
-// node shots.mjs <dossier de sortie> [largeurxhauteur ...]
+// Screenshots of the UI at several window sizes (visual layout check).
+// node shots.mjs <output folder> [widthxheight ...]
 import { _electron as electron } from "playwright";
 import fs from "node:fs";
 import os from "node:os";

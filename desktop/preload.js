@@ -1,9 +1,9 @@
-// Pont minimal et sûr entre la page Reco et l'appli de bureau.
+// Minimal, safe bridge between the Reco page and the desktop app.
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 const inv = (c, ...a) => ipcRenderer.invoke(c, ...a);
 contextBridge.exposeInMainWorld("recoDesktop", {
   platform: process.platform,
-  local: process.argv.includes("--reco-local"), // vidéos sur le PC + partage Google Drive
+  local: process.argv.includes("--reco-local"), // videos on the computer + sharing
   setServer: (url) => inv("set-server", url),
   recording: (on) => ipcRenderer.send("recording", !!on),
   lib: {

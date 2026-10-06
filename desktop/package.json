@@ -2,7 +2,7 @@
   "name": "reco-desktop",
   "productName": "Reco",
   "version": "1.1.0",
-  "description": "Reco pour ordinateur : enregistre ton écran et ta caméra, partage la vidéo avec un lien.",
+  "description": "Reco for desktop: record your screen and camera, share the video with a link.",
   "license": "MIT",
   "main": "main.js",
   "scripts": {
@@ -56,9 +56,9 @@
       "hardenedRuntime": false,
       "artifactName": "Reco-${version}-${arch}.${ext}",
       "extendInfo": {
-        "NSCameraUsageDescription": "Reco utilise ta caméra pendant l'enregistrement.",
-        "NSMicrophoneUsageDescription": "Reco utilise ton micro pendant l'enregistrement.",
-        "NSScreenCaptureUsageDescription": "Reco enregistre l'écran ou la fenêtre que tu choisis."
+        "NSCameraUsageDescription": "Reco uses your camera while recording.",
+        "NSMicrophoneUsageDescription": "Reco uses your microphone while recording.",
+        "NSScreenCaptureUsageDescription": "Reco records the screen or window you choose."
       }
     },
     "dmg": {

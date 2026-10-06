@@ -2,17 +2,17 @@ name = "reco"
 main = "src/worker.js"
 compatibility_date = "2026-09-01"
 
-# Les fichiers statiques (l'appli d'enregistrement) ; le Worker passe en premier pour /api, /v, /f, /t
+# Static files (the recording app); the Worker runs first for /api, /v, /f, /t
 [assets]
 directory = "./public"
 binding = "ASSETS"
 run_worker_first = ["/api/*", "/v/*", "/f/*", "/t/*", "/download", "/download/*"]
 
-# Stockage des vidéos (Cloudflare R2, offre gratuite : 10 Go, bande passante gratuite)
+# Video storage (Cloudflare R2, free tier: 10 GB, free egress)
 [[r2_buckets]]
 binding = "VIDEOS"
 bucket_name = "reco-videos"
 
-# Secrets (à définir avec `wrangler secret put`, et dans .dev.vars en local) :
-#   INVITE_CODE     code à donner à tes potes pour pouvoir enregistrer
-#   SESSION_SECRET  longue chaîne aléatoire pour signer les sessions
+# Secrets (set with `wrangler secret put`, and in .dev.vars locally):
+#   INVITE_CODE     code you give to the people allowed to record
+#   SESSION_SECRET  long random string used to sign sessions

@@ -1,13 +1,13 @@
-// « Mon serveur Reco » : publier une vidéo du PC sur TON serveur Cloudflare (déployé avec le bouton Deploy to Cloudflare).
-// On s'y connecte avec l'adresse du serveur, ton prénom et le code d'invitation ; la vidéo est envoyée par morceaux de 8 Mo
-// via l'API du serveur, puis on obtient le lien de la page de partage (/v/…), avec vues, avance rapide, aperçu WhatsApp.
+// "My Reco server": publish a video from the computer to YOUR Cloudflare server (deployed with the Deploy to Cloudflare button).
+// You connect with the server address, your first name and the invite code; the video is uploaded in 8 MB chunks
+// through the server API, which returns the share page link (/v/…) with views, seeking and link previews.
 const { ipcMain, safeStorage } = require("electron");
 const fsp = require("fs/promises");
 const fs = require("fs");
 const path = require("path");
 const local = require("./local");
 
-const PART = 8 * 1024 * 1024; // taille fixe des morceaux (exigence de R2 : tous identiques sauf le dernier)
+const PART = 8 * 1024 * 1024; // fixed chunk size (R2 requires all parts but the last to be the same size)
 const seal = (s) => (safeStorage.isEncryptionAvailable() ? "enc:" + safeStorage.encryptString(s).toString("base64") : "raw:" + s);
 const unseal = (s) => (!s ? "" : s.startsWith("enc:") ? safeStorage.decryptString(Buffer.from(s.slice(4), "base64")) : s.replace(/^raw:/, ""));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -17,11 +17,11 @@ function register({ loadCfg, saveCfg }) {
 
   async function call(p, opt = {}) {
     const c = loadCfg().cloud;
-    if (!c?.cookie) throw new Error("Aucun serveur Reco connecté.");
+    if (!c?.cookie) throw new Error("No Reco server connected.");
     const r = await fetch(c.server + p, { ...opt, headers: { cookie: `reco_session=${unseal(c.cookie)}`, ...(opt.headers || {}) } });
-    if (r.status === 401) throw new Error("Session expirée : reconnecte ton serveur Reco.");
+    if (r.status === 401) throw new Error("Session expired: reconnect your Reco server.");
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || `Erreur du serveur (${r.status}).`);
+    if (!r.ok) throw new Error(d.error || `Server error (${r.status}).`);
     return d;
   }
 
@@ -29,14 +29,14 @@ function register({ loadCfg, saveCfg }) {
 
   ipcMain.handle("cloud:connect", async (e, { url, name, code }) => {
     let origin;
-    try { const u = new URL(/^https?:\/\//.test(url) ? url : `https://${url}`); origin = u.origin; } catch { throw new Error("Adresse du serveur invalide."); }
+    try { const u = new URL(/^https?:\/\//.test(url) ? url : `https://${url}`); origin = u.origin; } catch { throw new Error("Invalid server address."); }
     let r;
     try { r = await fetch(`${origin}/api/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, code }) }); }
-    catch { throw new Error("Aucun serveur ne répond à cette adresse."); }
+    catch { throw new Error("No server responds at this address."); }
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || (r.status === 404 ? "Ce n'est pas un serveur Reco." : `Erreur ${r.status}.`));
+    if (!r.ok) throw new Error(d.error || (r.status === 404 ? "This is not a Reco server." : `Error ${r.status}.`));
     const cookie = (r.headers.getSetCookie?.() || [r.headers.get("set-cookie") || ""]).join(";").match(/reco_session=([^;]+)/)?.[1];
-    if (!cookie) throw new Error("Le serveur n'a pas ouvert de session.");
+    if (!cookie) throw new Error("The server did not open a session.");
     const cfg = loadCfg(); cfg.cloud = { server: origin, name: d.name || name, cookie: seal(cookie) }; saveCfg(cfg);
     return status();
   });
@@ -56,7 +56,7 @@ function register({ loadCfg, saveCfg }) {
           try {
             parts.push(await call(`/api/upload/part?key=${encodeURIComponent(s.key)}&uploadId=${encodeURIComponent(s.uploadId)}&n=${n}`, { method: "PUT", body: buf }));
             break;
-          } catch (err) { if (a >= 6 || /Session expirée/.test(err.message)) throw err; await sleep(1000 * 2 ** a); }
+          } catch (err) { if (a >= 6 || /Session expired/.test(err.message)) throw err; await sleep(1000 * 2 ** a); }
         }
         send(Math.min(0.97, (pos + len) / size));
         if (pos + len >= size) break;
@@ -66,7 +66,7 @@ function register({ loadCfg, saveCfg }) {
       throw err;
     } finally { await fh.close(); }
     const done = await call("/api/upload/complete", { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: s.id, key: s.key, uploadId: s.uploadId, parts, title: meta.title, duration: meta.duration, width: meta.width, height: meta.height }) });
+      body: JSON.stringify({ id: s.id, key: s.key, uploadId: s.uploadId, parts, title: meta.title, duration: meta.duration, width: meta.width, height: meta.height, fps: meta.fps }) });
     const thumb = path.join(dir, `${meta.id}.jpg`);
     if (fs.existsSync(thumb)) await call(`/api/thumb/${done.id}`, { method: "PUT", body: await fsp.readFile(thumb) }).catch(() => {});
     send(1);

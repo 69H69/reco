@@ -1,4 +1,4 @@
-# Code à donner à tes potes pour pouvoir enregistrer (choisis-en un long)
-INVITE_CODE=change-moi
-# Longue chaîne aléatoire pour signer les sessions (ex. : openssl rand -base64 48)
-SESSION_SECRET=remplace-par-une-longue-chaine-aleatoire
+# Code you give to the people allowed to record (pick a long one)
+INVITE_CODE=change-me
+# Long random string used to sign sessions (e.g. openssl rand -base64 48)
+SESSION_SECRET=replace-with-a-long-random-string

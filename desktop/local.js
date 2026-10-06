@@ -1,6 +1,6 @@
-// Bibliothèque locale : les vidéos vivent dans le dossier Vidéos/Reco de l'utilisateur.
-// Chaque vidéo = <id>.<ext> + <id>.json (titre, durée…) + <id>.jpg (miniature).
-// L'interface est servie par le protocole reco://app/ ; les vidéos par reco://app/media/<fichier> (avec Range).
+// Local library: videos live in the user's Videos/Reco folder.
+// Each video = <id>.<ext> + <id>.json (title, duration…) + <id>.jpg (thumbnail).
+// The UI is served over the reco://app/ protocol; videos over reco://app/media/<file> (with Range).
 const { app, protocol, ipcMain, shell } = require("electron");
 const fs = require("fs");
 const fsp = require("fs/promises");
@@ -25,14 +25,14 @@ function newId() {
   return Array.from(crypto.randomBytes(12), (x) => a[x % 62]).join("");
 }
 
-function registerScheme() { // à appeler AVANT app.ready
+function registerScheme() { // must be called BEFORE app.ready
   protocol.registerSchemesAsPrivileged([{ scheme: "reco", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }]);
 }
 
 async function serveFile(req, file) {
   let st;
-  try { st = await fsp.stat(file); } catch { return new Response("Introuvable", { status: 404 }); }
-  if (!st.isFile()) return new Response("Introuvable", { status: 404 });
+  try { st = await fsp.stat(file); } catch { return new Response("Not found", { status: 404 }); }
+  if (!st.isFile()) return new Response("Not found", { status: 404 });
   const type = MIME[path.extname(file).toLowerCase()] || "application/octet-stream";
   const size = st.size, range = req.headers.get("range");
   const base = { "content-type": type, "accept-ranges": "bytes", "cache-control": "no-cache" };
@@ -53,19 +53,19 @@ function handleProtocol() {
     let p = decodeURIComponent(u.pathname);
     if (p.startsWith("/media/")) {
       const name = path.basename(p);
-      if (!/^[A-Za-z0-9]{12}\.(mp4|webm|mov|jpg)$/.test(name)) return new Response("Introuvable", { status: 404 });
+      if (!/^[A-Za-z0-9]{12}\.(mp4|webm|mov|jpg)$/.test(name)) return new Response("Not found", { status: 404 });
       return serveFile(req, path.join(videosDir(), name));
     }
     if (p === "/" || p === "") p = "/index.html";
     const root = uiDir(), f = path.normalize(path.join(root, p));
-    if (!f.startsWith(root)) return new Response("Interdit", { status: 403 });
+    if (!f.startsWith(root)) return new Response("Forbidden", { status: 403 });
     return serveFile(req, f);
   });
 }
 
 const metaPath = (id) => path.join(videosDir(), `${id}.json`);
 async function readMeta(id) {
-  if (!ID_RE.test(id)) throw new Error("Vidéo inconnue.");
+  if (!ID_RE.test(id)) throw new Error("Unknown video.");
   return JSON.parse(await fsp.readFile(metaPath(id), "utf8"));
 }
 function withUrls(meta) {
@@ -81,7 +81,7 @@ async function writeMeta(meta) {
 
 function register({ loadCfg, saveCfg }) {
   const writers = new Map();
-  const userName = () => loadCfg().name || (os.userInfo().username || "Moi").replace(/^\w/, (c) => c.toUpperCase());
+  const userName = () => loadCfg().name || (os.userInfo().username || "Me").replace(/^\w/, (c) => c.toUpperCase());
 
   ipcMain.handle("local:me", () => ({ name: userName(), folder: videosDir() }));
   ipcMain.handle("local:setName", (e, n) => { const c = loadCfg(); c.name = String(n || "").trim().slice(0, 40); saveCfg(c); return userName(); });
@@ -93,21 +93,21 @@ function register({ loadCfg, saveCfg }) {
       try {
         const m = JSON.parse(await fsp.readFile(path.join(dir, f), "utf8"));
         if (fs.existsSync(path.join(dir, `${m.id}.${m.ext}`))) out.push(withUrls(m));
-      } catch { /* fichier abîmé : ignoré */ }
+      } catch { /* damaged file: skipped */ }
     }
     return out.sort((a, b) => b.created - a.created);
   });
 
   ipcMain.handle("local:start", async (e, ext) => {
-    if (!(ext in TYPES)) throw new Error("Format non pris en charge.");
+    if (!(ext in TYPES)) throw new Error("Unsupported format.");
     const id = newId(), file = path.join(videosDir(), `${id}.${ext}.part`);
     writers.set(id, { ext, file, fh: await fsp.open(file, "w"), end: 0 });
     return { id };
   });
-  // morceau à écrire à une position donnée (le MP4 réécrit son en-tête à la fin), ou à la suite si pos est absent
+  // chunk written at a given offset (the MP4 header is patched at the end), or appended if pos is missing
   ipcMain.handle("local:chunk", async (e, id, buf, pos) => {
     const w = writers.get(id);
-    if (!w) throw new Error("Enregistrement inconnu.");
+    if (!w) throw new Error("Unknown recording.");
     const b = Buffer.from(buf), at = Number.isInteger(pos) ? pos : w.end;
     await w.fh.write(b, 0, b.length, at);
     w.end = Math.max(w.end, at + b.length);
@@ -115,12 +115,12 @@ function register({ loadCfg, saveCfg }) {
   });
   ipcMain.handle("local:finish", async (e, id, b) => {
     const w = writers.get(id);
-    if (!w) throw new Error("Enregistrement inconnu.");
+    if (!w) throw new Error("Unknown recording.");
     await w.fh.close();
     writers.delete(id);
     const final = path.join(videosDir(), `${id}.${w.ext}`);
     await fsp.rename(w.file, final);
-    const meta = { id, ext: w.ext, contentType: TYPES[w.ext], size: (await fsp.stat(final)).size, title: String(b.title || "Sans titre").slice(0, 120),
+    const meta = { id, ext: w.ext, contentType: TYPES[w.ext], size: (await fsp.stat(final)).size, title: String(b.title || "Untitled").slice(0, 120),
       author: userName(), created: Date.now(), duration: Number(b.duration) || 0, width: b.width || null, height: b.height || null, fps: b.fps || null };
     return writeMeta(meta);
   });
@@ -130,13 +130,13 @@ function register({ loadCfg, saveCfg }) {
     return true;
   });
   ipcMain.handle("local:thumb", async (e, id, buf) => {
-    if (!ID_RE.test(id)) throw new Error("Vidéo inconnue.");
+    if (!ID_RE.test(id)) throw new Error("Unknown video.");
     await fsp.writeFile(path.join(videosDir(), `${id}.jpg`), Buffer.from(buf));
     return withUrls(await readMeta(id));
   });
   ipcMain.handle("local:import", async (e, src, b) => {
     const ext = path.extname(src).slice(1).toLowerCase();
-    if (!(ext in TYPES)) throw new Error("Formats acceptés : MP4, WebM, MOV.");
+    if (!(ext in TYPES)) throw new Error("Supported formats: MP4, WebM, MOV.");
     const id = newId(), final = path.join(videosDir(), `${id}.${ext}`);
     await fsp.copyFile(src, final);
     const meta = { id, ext, contentType: TYPES[ext], size: (await fsp.stat(final)).size, title: String(b.title || path.basename(src, path.extname(src))).slice(0, 120),

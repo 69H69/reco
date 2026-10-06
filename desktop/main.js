@@ -1,7 +1,7 @@
-// Reco Desktop — appli autonome : les vidéos sont enregistrées sur le PC (dossier Vidéos/Reco) et partagées par Google Drive.
-// (Mode serveur optionnel : RECO_SERVER=https://… ou config.server, pour utiliser un serveur Reco Cloudflare.)
-// Ajoute ce que le navigateur ne sait pas faire : sélecteur d'écran/fenêtre, son de l'ordinateur (Windows),
-// fenêtre de contrôle toujours au premier plan et INVISIBLE dans l'enregistrement, icône de barre système, raccourci.
+// Reco Desktop — standalone app: videos are saved on the computer (Videos/Reco folder) and shared via Google Drive or your own server.
+// (Optional server mode: RECO_SERVER=https://… or config.server, to use a Reco Cloudflare server as the UI.)
+// Adds what the browser can't do: a screen/window picker, computer audio (Windows),
+// a control window that stays on top and is INVISIBLE in the recording, a tray icon, a global shortcut.
 const { app, BrowserWindow, session, desktopCapturer, ipcMain, shell, Tray, Menu, globalShortcut, nativeImage } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -9,12 +9,13 @@ const local = require("./local");
 const drive = require("./drive");
 const cloud = require("./cloud");
 
+app.commandLine.appendSwitch("lang", "en-US"); // built-in UI (video controls, dialogs) in English
 const TEST = process.env.RECO_TEST === "1";
 if (TEST) {
   app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
   app.commandLine.appendSwitch("use-fake-device-for-media-stream");
 }
-if (process.env.RECO_USERDATA) app.setPath("userData", process.env.RECO_USERDATA); // profil isolé (tests)
+if (process.env.RECO_USERDATA) app.setPath("userData", process.env.RECO_USERDATA); // isolated profile (tests)
 if (!app.requestSingleInstanceLock()) app.quit();
 local.registerScheme();
 
@@ -35,13 +36,13 @@ function createMain() {
     width: 1280, height: 820, minWidth: 720, minHeight: 540, title: "Reco", icon: ICON,
     backgroundColor: "#fdfdfd", autoHideMenuBar: true, show: false,
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true,
-      backgroundThrottling: false, // la fenêtre est réduite pendant l'enregistrement : rien ne doit ralentir
+      backgroundThrottling: false, // the window is minimized while recording: nothing may slow down
       additionalArguments: LOCAL_MODE() ? ["--reco-local"] : [] },
   });
   win.once("ready-to-show", () => win.show());
   openServer();
 
-  // fenêtres ouvertes par la page : la mini-fenêtre de contrôle (même origine) ; tout le reste part dans le navigateur
+  // windows opened by the page: the control mini window (same origin); everything else goes to the browser
   win.webContents.setWindowOpenHandler(({ url, frameName }) => {
     if (frameName === "reco-pip") {
       return { action: "allow", overrideBrowserWindowOptions: {
@@ -53,7 +54,7 @@ function createMain() {
   });
   win.webContents.on("did-create-window", (child) => {
     child.setAlwaysOnTop(true, "screen-saver");
-    child.setContentProtection(true); // la fenêtre de contrôle n'apparaît pas dans la vidéo
+    child.setContentProtection(true); // the control window never shows up in the video
     const { width } = require("electron").screen.getPrimaryDisplay().workAreaSize;
     child.setPosition(width - 300, 40);
   });
@@ -70,13 +71,13 @@ function openServer() {
   else win.loadURL("reco://app/index.html");
 }
 
-// ── sélecteur d'écran / de fenêtre (remplace celui du navigateur) ──
+// ── screen / window picker (replaces the browser's) ──
 function pickSource(sources) {
   return new Promise((resolve) => {
     let done = false;
     const finish = (v) => { if (!done) { done = true; resolve(v); } };
     const p = new BrowserWindow({
-      parent: win, modal: true, width: 920, height: 640, title: "Que veux-tu partager ?", icon: ICON, backgroundColor: "#fdfdfd",
+      parent: win, modal: true, width: 920, height: 640, title: "What do you want to share?", icon: ICON, backgroundColor: "#fdfdfd",
       autoHideMenuBar: true, minimizable: false, webPreferences: { preload: path.join(__dirname, "picker-preload.js"), contextIsolation: true, sandbox: true },
     });
     const data = sources.map((s) => ({ id: s.id, name: s.name, screen: s.id.startsWith("screen:"), thumb: s.thumbnail.toDataURL() }));
@@ -92,10 +93,10 @@ function setupCapture() {
   session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
     try {
       const sources = (await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 400, height: 225 } }))
-        .filter((s) => !/^Reco$|Que veux-tu partager/.test(s.name));
+        .filter((s) => !/^Reco$|What do you want to share/.test(s.name));
       const choice = TEST ? (sources.find((s) => s.id.startsWith("screen:")) || sources[0]) : await pickSource(sources);
       if (!choice) return callback({});
-      const audio = request.audioRequested && process.platform === "win32" ? "loopback" : undefined; // son de l'ordinateur
+      const audio = request.audioRequested && process.platform === "win32" ? "loopback" : undefined; // computer audio
       callback(audio ? { video: choice, audio } : { video: choice });
     } catch (err) {
       console.error(err);
@@ -110,21 +111,21 @@ function createTray() {
   tray.setToolTip("Reco");
   const showWin = () => { win.show(); win.focus(); };
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "Ouvrir Reco", click: showWin },
-    { label: "Nouvel enregistrement   Ctrl+Maj+R", click: () => { showWin(); win.webContents.executeJavaScript('document.querySelector("#b-new")?.click()'); } },
+    { label: "Open Reco", click: showWin },
+    { label: process.platform === "darwin" ? "New recording   Cmd+Shift+R" : "New recording   Ctrl+Shift+R", click: () => { showWin(); win.webContents.executeJavaScript('document.querySelector("#b-new")?.click()'); } },
     { type: "separator" },
-    { label: "Ouvrir le dossier des vidéos", click: () => shell.openPath(local.videosDir()) },
-    { label: "Quitter", click: () => { app.isQuitting = true; app.quit(); } },
+    { label: "Open videos folder", click: () => shell.openPath(local.videosDir()) },
+    { label: "Quit", click: () => { app.isQuitting = true; app.quit(); } },
   ]));
   tray.on("click", showWin);
 }
 
-// ── messages de la page ──
+// ── messages from the page ──
 ipcMain.handle("set-server", async (e, url) => {
   let u;
-  try { u = new URL(url); } catch { return { ok: false, error: "Adresse invalide." }; }
-  if (!/^https?:$/.test(u.protocol)) return { ok: false, error: "L'adresse doit commencer par https://" };
-  try { const r = await fetch(`${u.origin}/api/me`); if (r.status !== 200 && r.status !== 401) throw new Error(); } catch { return { ok: false, error: "Aucun serveur Reco ne répond à cette adresse." }; }
+  try { u = new URL(url); } catch { return { ok: false, error: "Invalid address." }; }
+  if (!/^https?:$/.test(u.protocol)) return { ok: false, error: "The address must start with https://" };
+  try { const r = await fetch(`${u.origin}/api/me`); if (r.status !== 200 && r.status !== 401) throw new Error(); } catch { return { ok: false, error: "No Reco server responds at this address." }; }
   const c = loadCfg(); c.server = u.origin; saveCfg(c); openServer();
   return { ok: true };
 });

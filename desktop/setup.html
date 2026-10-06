@@ -1,4 +1,4 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Reco</title>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Reco</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <style>
 body{margin:0;background:#fdfdfd;color:#0c0a09;font:16px Inter,-apple-system,"Segoe UI",sans-serif;display:grid;place-items:center;height:100vh}
@@ -8,8 +8,8 @@ input{width:100%;box-sizing:border-box;background:#fff;border:1px solid #e7e5e4;
 button{margin-top:16px;width:100%;border:0;border-radius:999px;padding:13px;font:600 16px system-ui;background:#5e51f8;color:#fff;cursor:pointer}
 .err{color:#ff8f84;min-height:1.4em;margin-top:10px}
 </style></head><body><div class="c">
-<h1>Bienvenue sur Reco</h1><p>Colle l'adresse de ton serveur Reco (celle qu'on t'a envoyée), par exemple <b>https://reco.exemple.workers.dev</b></p>
-<input id="u" placeholder="https://…" autofocus><button id="b">Continuer</button><div class="err" id="e"></div>
+<h1>Welcome to Reco</h1><p>Paste the address of your Reco server, for example <b>https://reco.example.workers.dev</b></p>
+<input id="u" placeholder="https://…" autofocus><button id="b">Continue</button><div class="err" id="e"></div>
 <script>
 const s=new URLSearchParams(location.search).get("suggested");if(s)document.getElementById("u").value=s;
 async function go(){document.getElementById("e").textContent="";const r=await recoDesktop.setServer(document.getElementById("u").value.trim());if(!r.ok)document.getElementById("e").textContent=r.error}

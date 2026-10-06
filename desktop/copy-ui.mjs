@@ -1,5 +1,5 @@
-// Copie l'interface (../public) dans desktop/ui pour l'intégrer à l'installateur.
+// Copies the UI (../public) into desktop/ui so it ships inside the installer.
 import fs from "node:fs";
 fs.rmSync("ui", { recursive: true, force: true });
 fs.cpSync("../public", "ui", { recursive: true });
-console.log("interface copiée dans desktop/ui");
+console.log("UI copied into desktop/ui");

@@ -1,74 +1,79 @@
 # Reco
 
-**Enregistre ton écran et ta caméra, partage la vidéo avec un simple lien. Gratuit, open source, hébergé chez toi.**
-*Record your screen and camera, share it with a link. Free, open source, self-hosted. — English below.*
+**Record your screen and camera, share the video with a simple link. Free, open source, self-hosted.**
+A free alternative to Loom or Tella for you and your friends.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/69H69/reco)
 
-![Bibliothèque](docs/library.png)
+![Library](docs/library.png)
 
-## Ce que ça fait
+## What it does
 
-- **3 modes** : écran + caméra (ta tête dans une bulle ronde), écran seul, caméra seule. Micro et son de l'ordinateur.
-- **Mini-fenêtre flottante** pendant l'enregistrement, toujours au premier plan : ta caméra, le chrono, pause, stop, et masquer / agrandir / déplacer la bulle en direct.
-- **Lien prêt dès que tu arrêtes** : la vidéo part en ligne *pendant* que tu enregistres (morceaux de 8 Mo, nouvelles tentatives automatiques). Pas de limite de durée.
-- **Page de partage** lisible partout (ordinateur, iPhone, Android), avance rapide, téléchargement, aperçu avec miniature sur WhatsApp, iMessage, Slack…
-- **Bibliothèque partagée** avec tes potes : titres, durées, nombre de vues, renommer, découper le début et la fin, supprimer (chacun ne gère que ses vidéos).
-- **Importer** une vidéo existante (MP4, WebM, MOV), par exemple exportée de [Cap](https://github.com/CapSoftware/Cap) ou d'OBS, pour la partager par lien.
-- **Accès par code d'invitation** pour enregistrer ; les liens partagés s'ouvrent sans compte.
+- **3 modes**: screen + camera (your face in a bubble), screen only, camera only. Microphone and computer audio.
+- **Floating mini window** while recording, always on top: your camera, the timer, pause, stop, **restart**, and hide / resize / move the bubble live.
+- **Constant frame rate** at **30 or 60 fps**, **720p to 4K**: Reco encodes the video itself, so editors read it without drift.
+- **Link ready as soon as you stop**: the video uploads *while* you record (8 MB chunks, automatic retries). No length limit.
+- **Share page** that works everywhere (desktop, iPhone, Android), with seeking, download, and thumbnail previews in WhatsApp, iMessage, Slack…
+- **Shared library** with your friends: titles, durations, view counts, rename, trim start and end, delete (everyone manages only their own videos).
+- **Import** an existing video (MP4, WebM, MOV), e.g. exported from [Cap](https://github.com/CapSoftware/Cap) or OBS, to share it by link.
+- **Invite code** required to record; share links open without an account.
 
-| Préparer | Partager | Page de partage |
+| Set up | Share | Share page |
 |---|---|---|
-| ![Préparer](docs/setup.png) | ![Partager](docs/share.png) | ![Page de partage](docs/player.png) |
+| ![Set up](docs/setup.png) | ![Share](docs/share.png) | ![Share page](docs/player.png) |
 
-## Deux façons d'utiliser Reco
+## Two ways to use Reco
 
-1. **Appli de bureau, sans serveur** (le plus simple) : tu installes Reco, tu enregistres, la vidéo est **sauvegardée sur ton PC** (dossier `Vidéos\Reco`). À la fin de l'enregistrement, tu choisis comment la partager :
-   - **Google Drive** : la vidéo part sur *ton* Drive (15 Go gratuits) et le lien est copié ;
-   - **Mon serveur Reco** : pour avoir **tout comme Tella** (page de partage, vues, bibliothèque en ligne, aperçu WhatsApp), publie sur *ton propre serveur Cloudflare* (voir « Installation » ci-dessous ; Cloudflare demande une carte bancaire pour activer le stockage R2, gratuit jusqu'à 10 Go). Dans l'appli : barre latérale > *Partage* > *Mon serveur Reco* > *Connecter* (adresse, prénom, code d'invitation).
-2. **Site web seul** (sur ton serveur Cloudflare) : enregistrement dans Chrome ou Edge, sans rien installer.
+1. **Desktop app, no server** (the simplest): install Reco, record, and the video is **saved on your computer** (`Videos\Reco` folder). At the end of the recording, choose how to share it:
+   - **Google Drive**: the video goes to *your* Drive (15 GB free) and the link is copied;
+   - **My Reco server**: for the **full Tella experience** (share page, views, online library, link previews), publish to *your own Cloudflare server* (see “Installation” below; Cloudflare asks for a card to enable R2 storage, free up to 10 GB). In the app: sidebar > *Sharing* > *My Reco server* > *Connect* (address, first name, invite code).
+2. **Website only** (on your Cloudflare server): record in Chrome or Edge, nothing to install.
 
-## Appli de bureau (Windows et Mac)
+| Sharing options | Google Drive setup |
+|---|---|
+| ![Sharing](docs/desktop-sharing.png) | ![Google Drive setup](docs/desktop-google-setup.png) |
 
-Comme Tella, Reco existe en **appli à installer** (`desktop/`, Electron). Elle ajoute :
-- **son propre sélecteur** d'écran ou de fenêtre, avec miniatures, et le **son de l'ordinateur** capturé directement ;
-- une **fenêtre de contrôle toujours au premier plan et invisible dans la vidéo** (chrono, pause, stop, bulle) ;
-- la fenêtre principale qui **se range pendant l'enregistrement** et revient à l'arrêt ;
-- une icône dans la barre système et le raccourci **Ctrl+Maj+R** (lancer / arrêter) ;
-- **« Recommencer »** pendant l'enregistrement (efface la prise et relance le compte à rebours, sans redemander l'écran) et **« Refaire »** sur l'écran de fin ;
-- le choix de la **qualité** (720p, 1080p, 1440p ou la résolution de l'écran jusqu'à 4K) et des **images par seconde** (30 ou 60), mémorisés d'une fois sur l'autre ;
-- une interface qui s'adapte aux petites fenêtres (la barre latérale se réduit à des icônes).
+## Desktop app (Windows and Mac)
 
-**Cadence fixe** : la vidéo est encodée par Reco lui-même (WebCodecs H.264 + AAC, mise en MP4 par [mp4-muxer](https://github.com/Vanilagy/mp4-muxer)) et non par `MediaRecorder`. Chaque image porte l'horodatage n / fps ; si l'écran ou la caméra prend du retard, l'image précédente est répétée. Résultat : une vidéo à 30 ou 60 i/s **constants**, que les logiciels de montage lisent sans décalage, avec un son recalé sur la même horloge. Les pauses ne laissent aucun trou.
+Like Tella, Reco comes as an **installable app** (`desktop/`, Electron). It adds:
+- **its own screen or window picker**, with thumbnails, and **computer audio** captured directly;
+- a **control window that stays on top and is invisible in the video** (timer, pause, stop, restart, bubble);
+- the main window **gets out of the way while recording** and comes back when you stop;
+- a tray icon and the **Ctrl+Shift+R** shortcut (start / stop);
+- **“Restart”** while recording (discards the take and restarts the countdown, without asking for the screen again) and **“Redo”** on the end screen;
+- **quality** (720p, 1080p, 1440p or the screen's resolution up to 4K) and **frame rate** (30 or 60 fps), remembered between recordings;
+- a layout that adapts to small windows (the sidebar collapses to icons).
 
-Elle fonctionne seule (vidéos sur le PC). Le site d'un serveur Reco propose aussi un lien **« Télécharger l'app »** (`/download`), qui sert les installateurs déposés dans R2 :
+**Constant frame rate**: the video is encoded by Reco itself (WebCodecs H.264 + AAC, muxed into MP4 by [mp4-muxer](https://github.com/Vanilagy/mp4-muxer)) rather than by `MediaRecorder`. Frame n always gets timestamp n / fps; if the screen or camera falls behind, the previous frame is repeated. The result is a video at a **constant** 30 or 60 fps that editing software reads without drift, with audio aligned on the same clock. Pauses leave no gap.
+
+It works on its own (videos on the computer). A Reco server's site also offers a **“Download the app”** link (`/download`), which serves installers uploaded to R2:
 ```bash
-cd desktop && npm install && npm run dist          # fabrique dist/Reco-Setup-x.y.z.exe
-npx wrangler r2 object put reco-videos/apps/Reco-Setup.exe --file desktop/dist/Reco-Setup-1.0.0.exe --remote   # idem apps/Reco-arm64.dmg et apps/Reco-x64.dmg
+cd desktop && npm install && npm run dist          # builds dist/Reco-Setup-x.y.z.exe
+npx wrangler r2 object put reco-videos/apps/Reco-Setup.exe --file desktop/dist/Reco-Setup-1.1.0.exe --remote   # same for apps/Reco-arm64.dmg and apps/Reco-x64.dmg
 ```
-L'installateur n'est pas signé numériquement : au premier lancement, Windows affiche « Windows a protégé votre ordinateur ». Clique sur *Informations complémentaires*, puis sur *Exécuter quand même*.
+The installer is not code-signed: on first launch, Windows shows “Windows protected your PC”. Click *More info*, then *Run anyway*.
 
-**Mac** (`Reco-x.y.z-arm64.dmg` pour les Mac Apple Silicon M1 à M4, `x64` pour les Mac Intel) : ouvre le `.dmg` et glisse Reco dans Applications. L'appli n'est pas signée par Apple : au premier lancement, fais un clic droit sur Reco puis *Ouvrir*. Si macOS dit qu'elle est « endommagée », lance `xattr -cr /Applications/Reco.app` dans le Terminal. macOS demande ensuite l'autorisation d'enregistrer l'écran (Réglages Système > Confidentialité et sécurité > Enregistrement de l'écran). Sur Mac, le son de l'ordinateur n'est pas encore capturé (micro uniquement).
+**Mac** (`Reco-x.y.z-arm64.dmg` for Apple Silicon M1–M4 Macs, `x64` for Intel Macs): open the `.dmg` and drag Reco into Applications. The app is not signed by Apple: on first launch, right-click Reco and choose *Open*. If macOS says it is “damaged”, run `xattr -cr /Applications/Reco.app` in Terminal. macOS then asks for permission to record the screen (System Settings > Privacy & Security > Screen Recording). On Mac, computer audio is not captured yet (microphone only).
 
-**Fabriquer les installateurs** : l'onglet *Actions* du dépôt (workflow « Appli de bureau ») produit le `.dmg` et le `.exe` sur les machines de GitHub et vérifie que l'appli démarre. Pousser un tag `v1.0.1` publie une *release* avec les fichiers.
+**Building the installers**: the repo's *Actions* tab (“Desktop app” workflow) builds the `.dmg` and `.exe` on GitHub's machines and checks that the app starts. Pushing a `v1.1.0` tag publishes a *release* with the files.
 
-**Partage Google Drive** : dans l'appli, *Partage* > *Google Drive* > *Configurer* ouvre un assistant en 5 étapes (avec les liens directs vers Google Cloud) et importe le fichier `client_secret_….json`. Pour que tes potes n'aient rien à configurer, intègre plutôt ta clé à l'installateur : crée un projet sur console.cloud.google.com, active *Google Drive API*, configure l'écran de consentement (champ d'accès `drive.file` uniquement, puis *Publier*), crée un *ID client OAuth* de type **Application de bureau**, et mets-le dans `desktop/google-client.json` (`{"client_id": "…", "client_secret": "…"}`) ou dans le secret GitHub `GOOGLE_CLIENT_JSON` pour les builds automatiques.
+**Google Drive sharing**: Reco does not ship any Google key. Each user creates their own once, for free: in the app, *Sharing* > *Google Drive* > *Set up* opens a 5-step wizard (with direct links to Google Cloud) and imports the `client_secret_….json` file. Reco only asks for the `drive.file` scope: it can see the videos it uploads, never the rest of the Drive. (If you distribute your own build, you can bundle a key in `desktop/google-client.json` or the `GOOGLE_CLIENT_JSON` repo secret.)
 
-## Combien ça coûte ?
+## How much does it cost?
 
-**0 €** dans l'offre gratuite de Cloudflare : Workers (100 000 requêtes/jour) et R2 (**10 Go de stockage, bande passante gratuite**, soit environ 4 à 5 h de vidéo 1080p).
-Regarder une vidéo ne coûte rien, quel que soit le nombre de vues. Cloudflare peut demander une carte bancaire pour activer R2, même en restant dans l'offre gratuite.
+**$0** on Cloudflare's free tier: Workers (100,000 requests/day) and R2 (**10 GB of storage, free egress**, roughly 4–5 hours of 1080p video).
+Watching a video costs nothing, however many views. Cloudflare may ask for a card to enable R2, even when staying on the free tier.
 
 ## Installation
 
-### En un clic
-1. Clique sur **Deploy to Cloudflare** ci-dessus et connecte ton compte Cloudflare (gratuit).
-2. Renseigne les deux secrets demandés :
-   - `INVITE_CODE` : le code que tu donneras à tes potes pour pouvoir enregistrer (choisis-en un long) ;
-   - `SESSION_SECRET` : une longue chaîne aléatoire (par exemple `openssl rand -base64 48`).
-3. C'est en ligne sur `https://reco.<ton-compte>.workers.dev`.
+### One click
+1. Click **Deploy to Cloudflare** above and connect your (free) Cloudflare account.
+2. Fill in the two secrets:
+   - `INVITE_CODE`: the code you'll give to the people allowed to record (pick a long one);
+   - `SESSION_SECRET`: a long random string (e.g. `openssl rand -base64 48`).
+3. It's live at `https://reco.<your-account>.workers.dev`.
 
-### À la main
+### By hand
 ```bash
 git clone https://github.com/69H69/reco && cd reco
 npm install
@@ -79,46 +84,40 @@ npx wrangler secret put SESSION_SECRET
 npm run deploy
 ```
 
-### En local
+### Locally
 ```bash
-cp .dev.vars.example .dev.vars   # puis mets un code et un secret
+cp .dev.vars.example .dev.vars   # then set a code and a secret
 npm run dev                      # http://localhost:8787
 ```
 
-## Bon à savoir
+## Good to know
 
-- **Pour enregistrer : Chrome ou Edge sur ordinateur.** La mini-fenêtre utilise l'API *Document Picture-in-Picture* et le compositeur utilise *MediaStreamTrackProcessor*, deux technologies qui n'existent pas encore dans Firefox ni Safari. Les liens de partage, eux, marchent partout.
-- La vidéo est en **MP4 (H.264 + AAC)** quand le navigateur sait le produire (Chrome et Edge récents), sinon en WebM.
-- La **découpe** masque le début et la fin à la lecture ; le fichier téléchargé reste complet.
-- Le compositeur tourne dans un *Web Worker* et suit le rythme des images de la caméra : la bulle ne gèle pas quand l'onglet de Reco passe en arrière-plan.
-- Sécurité : sessions signées (HMAC-SHA256, cookie `HttpOnly`), identifiants de vidéo aléatoires de 12 caractères, liens non devinables mais **publics pour qui les possède**. Choisis un code d'invitation long.
+- **To record: Chrome or Edge on a computer** (or the desktop app). Reco uses *WebCodecs*, *MediaStreamTrackProcessor* and *Document Picture-in-Picture*, which Firefox and Safari don't fully support yet. Share links work everywhere.
+- Videos are **MP4 (H.264 + AAC)**, or H.264 + Opus if the browser has no AAC encoder.
+- **Trimming** hides the start and end during playback; the downloaded file stays complete.
+- The compositor and encoder run in a *Web Worker*, so the recording doesn't freeze when the Reco tab goes to the background.
+- Security: signed sessions (HMAC-SHA256, `HttpOnly` cookie), random 12-character video IDs, links that can't be guessed but are **public to anyone who has them**. Pick a long invite code.
 
 ## Tests
 
-Test de bout en bout avec un navigateur piloté (caméra, micro et écran factices) : enregistrement avec pause, envoi pendant l'enregistrement, lien, découpe, vues, import en plusieurs morceaux, droits de suppression, Range, durée du fichier.
+End-to-end tests with a driven browser and a fake camera, microphone and screen.
 ```bash
-npm run dev            # dans un terminal
-pip install playwright # une fois
-python tests/e2e.py screen+cam 25
+npm run dev                      # in one terminal
+pip install playwright           # once
+python tests/e2e.py screen+cam 25          # web app: pause, upload while recording, link, trim, views, chunked import, permissions, Range, duration
+cd desktop && node test.mjs                # desktop app: constant frame rate, 30/60 fps, restart, redo, pause, sharing (Drive simulated)
 ```
 
 ## Architecture
 
 ```
-desktop/       appli de bureau Electron (sélecteur, son système, fenêtre de contrôle, barre système) + installateur
-public/        appli (HTML/CSS/JS sans framework) + comp.js (compositeur en Web Worker)
-src/worker.js  API Cloudflare Worker : connexion, envoi multipart vers R2, /v/:id (page de partage),
-               /f/:id (vidéo, avec Range), /t/:id (miniature), vues, découpe
+desktop/       Electron desktop app (picker, system audio, control window, tray, local library, Drive, server publishing) + installer
+public/        the app (HTML/CSS/JS, no framework) + comp.js (compositor + encoder in a Web Worker) + mp4-muxer
+src/worker.js  Cloudflare Worker API: sign-in, multipart upload to R2, /v/:id (share page),
+               /f/:id (video, with Range), /t/:id (thumbnail), views, trim
 ```
-Pas de base de données : chaque vidéo a un petit fichier JSON de métadonnées dans R2.
+No database: each video has a small JSON metadata file in R2.
 
----
+## License
 
-## English
-
-Reco is a free, open-source, self-hosted alternative to Loom or Tella for you and your friends: record your **screen + camera bubble**, a **floating mini-window** stays on top while recording (camera, timer, pause, stop, move or resize the bubble), the video **uploads while you record**, and you get a **share link** the moment you stop. The share page works on any device, with link previews.
-Runs entirely on Cloudflare's free tier (Workers + R2: 10 GB storage, free egress). Recording requires Chrome or Edge on desktop. Click **Deploy to Cloudflare** above, set `INVITE_CODE` and `SESSION_SECRET`, done.
-
-## Licence
-
-MIT. Voir [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

@@ -1,7 +1,7 @@
-name: Appli de bureau
+name: Desktop app
 
-# Fabrique Reco pour Mac (.dmg, Apple Silicon + Intel) et Windows (.exe), vérifie que l'appli démarre,
-# puis publie les fichiers (artefacts ; et une « release » GitHub quand on pousse un tag v*).
+# Builds Reco for Mac (.dmg, Apple Silicon + Intel) and Windows (.exe), checks that the app starts,
+# then publishes the files (artifacts; plus a GitHub release when a v* tag is pushed).
 on:
   workflow_dispatch:
   push:
@@ -24,26 +24,26 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - name: Identifiants Google Drive (secret du dépôt GOOGLE_CLIENT_JSON, facultatif)
+      - name: Bundled Google Drive key (optional GOOGLE_CLIENT_JSON repo secret; otherwise each user imports their own)
         shell: bash
         run: |
-          if [ -n "$GOOGLE_CLIENT_JSON" ]; then printf '%s' "$GOOGLE_CLIENT_JSON" > google-client.json; echo "Google Drive configuré"; else echo "Pas d'identifiants Google, partage Drive désactivé"; fi
+          if [ -n "$GOOGLE_CLIENT_JSON" ]; then printf '%s' "$GOOGLE_CLIENT_JSON" > google-client.json; echo "Google key bundled"; else echo "No bundled Google key: users import their own in the app"; fi
         env:
           GOOGLE_CLIENT_JSON: ${{ secrets.GOOGLE_CLIENT_JSON }}
       - run: node copy-ui.mjs
-      - name: Fabriquer (Mac)
+      - name: Build (Mac)
         if: runner.os == 'macOS'
         run: npx electron-builder --mac --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - name: Fabriquer (Windows)
+      - name: Build (Windows)
         if: runner.os == 'Windows'
         run: npx electron-builder --win --publish never
-      - name: Vérifier que l'appli démarre (Mac)
+      - name: Check the app starts (Mac)
         if: runner.os == 'macOS'
         timeout-minutes: 5
         run: node smoke.mjs "dist/mac-arm64/Reco.app/Contents/MacOS/Reco"
-      - name: Vérifier que l'appli démarre (Windows)
+      - name: Check the app starts (Windows)
         if: runner.os == 'Windows'
         timeout-minutes: 5
         run: node smoke.mjs "dist/win-unpacked/Reco.exe"
@@ -54,7 +54,7 @@ jobs:
             desktop/dist/*.dmg
             desktop/dist/*.exe
           if-no-files-found: error
-      - name: Publier la version
+      - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:

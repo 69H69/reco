@@ -1,12 +1,12 @@
-// Compositeur + encodeur (Web Worker) : écran + bulle caméra dans un OffscreenCanvas, encodé en H.264 + AAC (WebCodecs)
-// et rangé dans un MP4 (mp4-muxer). Cadence FIXE : l'image n porte toujours l'horodatage n / fps, quelle que soit
-// l'heure d'arrivée des images de l'écran ou de la caméra ; une image en retard est remplacée par la précédente.
-// Le son est horodaté au nombre d'échantillons, recalé sur l'horloge si la carte son dérive.
+// Compositor + encoder (Web Worker): screen + camera bubble drawn into an OffscreenCanvas, encoded as H.264 + AAC (WebCodecs)
+// and packed into an MP4 (mp4-muxer). CONSTANT frame rate: frame n always gets timestamp n / fps, whenever the screen or
+// camera frames actually arrive; a late frame is replaced by repeating the previous one.
+// Audio is timestamped by sample count and re-aligned to the clock if the sound card drifts.
 importScripts("/mp4-muxer.js");
 
 let cfg, canvas, ctx, preview, screenFrame = null, camFrame = null, dirty = true, stopped = false, prevBusy = false, lastPrev = 0, timer = 0;
-let audioFmt = null; // { sampleRate, numberOfChannels } du premier son reçu
-let rec = null;      // prise en cours
+let audioFmt = null; // { sampleRate, numberOfChannels } of the first audio received
+let rec = null;      // current take
 
 self.onmessage = (e) => {
   const d = e.data;
@@ -50,7 +50,7 @@ async function readVideo(reader, kind) {
   }
 }
 
-// ───────── dessin ─────────
+// ───────── drawing ─────────
 function drawCover(frame, x, y, w, h, mirror) {
   const fw = frame.displayWidth, fh = frame.displayHeight;
   const s = Math.max(w / fw, h / fh), sw = w / s, sh = h / s;
@@ -77,7 +77,7 @@ function render() {
       const d = Math.round(H * (cfg.big ? 0.42 : 0.26)), m = Math.round(H * 0.035);
       const x = cfg.corner.includes("r") ? W - d - m : m;
       const y = cfg.corner.includes("t") ? m : H - d - m;
-      // forme : carré aux coins très arrondis (par défaut) ou rond
+      // shape: square with very rounded corners (default) or circle
       const shape = (inset) => { ctx.beginPath(); if (cfg.shape === "circle") ctx.arc(x + d / 2, y + d / 2, d / 2 - inset, 0, Math.PI * 2); else ctx.roundRect(x + inset, y + inset, d - 2 * inset, d - 2 * inset, d * 0.22); };
       ctx.save();
       ctx.shadowColor = "rgba(0,0,0,.35)"; ctx.shadowBlur = H * 0.035; ctx.shadowOffsetY = H * 0.01;
@@ -88,28 +88,28 @@ function render() {
       shape(0.5); ctx.lineWidth = Math.max(1.5, H * 0.0025); ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.stroke();
     }
   }
-  // aperçu dans l'appli (sans attendre : il ne doit jamais ralentir l'enregistrement)
+  // in-app preview (not awaited: it must never slow down the recording)
   if (!prevBusy) {
     prevBusy = true; lastPrev = performance.now();
     preview.write(new VideoFrame(canvas, { timestamp: Math.round(lastPrev * 1000) })).catch(() => {}).finally(() => (prevBusy = false));
   }
 }
 
-// ───────── horloge : appelée par chaque image reçue, chaque morceau de son et un minuteur ─────────
+// ───────── clock: driven by every incoming frame, every audio chunk and a timer ─────────
 function tick() {
   if (stopped || !cfg) return;
   const now = performance.now();
   if (rec && rec.ready && !rec.paused && !rec.finishing) {
     const target = Math.floor((now - rec.t0 - rec.pausedMs) * cfg.fps / 1000);
     while (rec.n <= target) { if (dirty || rec.n === 0) render(); encodeVideo(rec.n++); }
-    // source de son muette ou coupée : on comble avec du silence pour garder le son et l'image ensemble
+    // silent or dead audio source: fill with silence to keep audio and video together
     if (rec.aenc && (now - rec.t0 - rec.pausedMs) / 1000 * rec.sr - rec.apos > rec.sr * 0.5) silence(Math.round((now - rec.t0 - rec.pausedMs - 100) / 1000 * rec.sr) - rec.apos);
   } else if (dirty && now - lastPrev >= 900 / cfg.fps) render();
 }
 
 function encodeVideo(n) {
   const fps = cfg.fps;
-  if (rec.venc.encodeQueueSize > fps * 4) { rec.skipped++; if (!rec.warned) { rec.warned = true; self.postMessage({ type: "warn", message: "L'ordinateur n'arrive pas à suivre : baisse la qualité ou les images par seconde." }); } return; }
+  if (rec.venc.encodeQueueSize > fps * 4) { rec.skipped++; if (!rec.warned) { rec.warned = true; self.postMessage({ type: "warn", message: "Your computer can't keep up: lower the quality or the frame rate." }); } return; }
   const f = new VideoFrame(canvas, { timestamp: Math.round(n * 1e6 / fps), duration: Math.round(1e6 / fps) });
   rec.venc.encode(f, { keyFrame: n % (fps * 2) === 0 });
   f.close();
@@ -121,7 +121,7 @@ function encodeVideo(n) {
   }
 }
 
-// ───────── son ─────────
+// ───────── audio ─────────
 async function readAudio(reader) {
   for (;;) {
     const { value, done } = await reader.read();
@@ -134,12 +134,12 @@ async function readAudio(reader) {
 
 function onAudio(ad) {
   const sr = rec.sr, frames = ad.numberOfFrames;
-  // position « horloge » du début de ce morceau, comparée au nombre d'échantillons déjà écrits
+  // clock position of this chunk's start, compared with the number of samples already written
   const tRec = (performance.now() - rec.t0 - rec.pausedMs) / 1000;
   const diff = Math.round(tRec * sr) - frames - rec.apos;
   if (!rec.aStarted) { rec.aStarted = true; rec.evalAt = tRec; if (diff > 0) silence(diff); }
   else {
-    // les morceaux arrivent parfois en retard, jamais en avance : le plus petit écart sur 2 s est le vrai décalage
+    // chunks sometimes arrive late, never early: the smallest gap over 2 s is the real offset
     rec.minDiff = Math.min(rec.minDiff, diff);
     if (tRec - rec.evalAt > 2) {
       const m = rec.minDiff; rec.minDiff = Infinity; rec.evalAt = tRec;
@@ -163,8 +163,8 @@ function pushAudio(buf, n) {
   rec.apos += n;
 }
 
-// ───────── choix des encodeurs ─────────
-function avcLevel(w, h, fps) { // niveau H.264 minimal pour la taille et la cadence
+// ───────── encoder selection ─────────
+function avcLevel(w, h, fps) { // lowest H.264 level for this size and frame rate
   const fs = Math.ceil(w / 16) * Math.ceil(h / 16), mbps = fs * fps;
   for (const [lv, maxFs, maxMbps] of [[0x1f, 3600, 108000], [0x20, 5120, 216000], [0x28, 8192, 245760], [0x2a, 8704, 522240], [0x32, 22080, 589824], [0x33, 36864, 983040], [0x34, 36864, 2073600]])
     if (fs <= maxFs && mbps <= maxMbps) return lv;
@@ -176,7 +176,7 @@ async function videoConfig(w, h, fps, bitrate) {
     const c = { codec: `avc1.${profile}${lv}`, width: w, height: h, bitrate, framerate: fps, bitrateMode: "variable", latencyMode: "quality", hardwareAcceleration: hw, avc: { format: "avc" } };
     if ((await VideoEncoder.isConfigSupported(c).catch(() => ({}))).supported) return c;
   }
-  throw new Error(`l'encodeur vidéo refuse ${w}×${h} à ${fps} i/s : choisis une qualité plus basse`);
+  throw new Error(`the video encoder rejects ${w}×${h} at ${fps} fps: choose a lower quality`);
 }
 async function audioConfig({ sampleRate, numberOfChannels }) {
   for (const [codec, mux] of [["mp4a.40.2", "aac"], ["opus", "opus"]]) {
@@ -186,22 +186,22 @@ async function audioConfig({ sampleRate, numberOfChannels }) {
   return null;
 }
 
-// ───────── une prise : début, fin, abandon ─────────
+// ───────── a take: begin, finish, discard ─────────
 async function begin(d) {
   discard();
   const r = rec = { epoch: d.epoch, ready: false, n: 0, skipped: 0, apos: 0, minDiff: Infinity, drop: 0, pausedMs: 0, paused: false };
   const { w, h, fps } = cfg;
-  if (cfg.hasAudio) for (let i = 0; i < 50 && !audioFmt; i++) await sleep(20); // attend le premier son pour connaître son format
+  if (cfg.hasAudio) for (let i = 0; i < 50 && !audioFmt; i++) await sleep(20); // wait for the first audio to learn its format
   const vc = await videoConfig(w, h, fps, d.bitrate);
   const ac = audioFmt ? await audioConfig(audioFmt) : null;
-  if (rec !== r) return; // abandonnée entre-temps
+  if (rec !== r) return; // discarded in the meantime
   const epoch = d.epoch;
   r.muxer = new Mp4Muxer.Muxer({
-    // écrit au fil de l'eau (≈ toutes les 0,5 s) : en cas de plantage, presque tout est déjà sur le disque
+    // streamed out as it goes (≈ every 0.5 s): after a crash, almost everything is already on disk
     target: new Mp4Muxer.StreamTarget({ onData: (data, pos) => { const b = data.slice(); self.postMessage({ type: "data", epoch, buf: b.buffer, pos }, [b.buffer]); } }),
     video: { codec: "avc", width: w, height: h, frameRate: fps },
     audio: ac ? { codec: ac.mux, sampleRate: ac.config.sampleRate, numberOfChannels: ac.config.numberOfChannels } : undefined,
-    fastStart: d.fragmented ? "fragmented" : false, // fichier : MP4 classique (en-tête réécrit à la fin) ; envoi en ligne : fragments
+    fastStart: d.fragmented ? "fragmented" : false, // file: regular MP4 (header patched at the end); online upload: fragmented
     firstTimestampBehavior: "strict",
   });
   r.venc = new VideoEncoder({ output: (chunk, meta) => r.muxer.addVideoChunk(chunk, meta), error: (err) => fail(err, epoch) });
@@ -222,7 +222,7 @@ async function finish() {
   if (!r.ready) { for (let i = 0; i < 100 && !r.ready && rec === r; i++) await sleep(20); if (!r.ready) return; }
   if (!r.paused) tick();
   r.finishing = true;
-  if (r.aenc) { const end = Math.round(r.n / cfg.fps * r.sr); if (end > r.apos) silence(end - r.apos); } // le son finit avec l'image
+  if (r.aenc) { const end = Math.round(r.n / cfg.fps * r.sr); if (end > r.apos) silence(end - r.apos); } // audio ends with the video
   await r.venc.flush();
   if (r.aenc) await r.aenc.flush();
   r.muxer.finalize();
