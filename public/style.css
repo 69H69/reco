@@ -190,3 +190,4 @@ body.player { background: var(--bg); }
 .modal h2 { margin-bottom: 8px; } .modal .actions { margin-top: 18px; }
 .modal form .btn { width: auto; margin-top: 0; }
 .nm.edit { cursor: pointer; } .nm.edit:hover { color: var(--acc); }
+.modal .err:empty { display: none; }
