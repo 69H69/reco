@@ -23,6 +23,7 @@
       "picker-preload.js",
       "local.js",
       "drive.js",
+      "cloud.js",
       "*.html",
       "default-server.json",
       "google-client.json",

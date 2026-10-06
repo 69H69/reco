@@ -183,3 +183,10 @@ body.player { background: var(--bg); }
 .gd { width: 8px; height: 8px; border-radius: 50%; background: #d6d3d1; flex: none; } .gd.on { background: var(--ok); }
 .gdt { flex: 1; display: flex; flex-direction: column; line-height: 1.3; font-weight: 500; min-width: 0; }
 .gdt small { color: var(--muted); font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── fenêtre « Mon serveur Reco » ── */
+.modal { border: 1px solid var(--line); border-radius: 18px; padding: 26px; width: min(460px, 92vw); box-shadow: 0 30px 80px -20px rgba(12,10,9,.35); }
+.modal::backdrop { background: rgba(12,10,9,.35); backdrop-filter: blur(2px); }
+.modal h2 { margin-bottom: 8px; } .modal .actions { margin-top: 18px; }
+.modal form .btn { width: auto; margin-top: 0; }
+.nm.edit { cursor: pointer; } .nm.edit:hover { color: var(--acc); }

@@ -8,6 +8,7 @@ const fmtDur2 = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(
 const RTF = new Intl.RelativeTimeFormat("fr", { numeric: "auto" });
 function ago(t) { const s = (t - Date.now()) / 1000, a = Math.abs(s); for (const [u, n] of [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]]) if (a >= n) return RTF.format(Math.round(s / n), u); return "à l'instant"; }
 const fmtSize = (b) => (b >= 1e9 ? `${+(b / 1e9).toFixed(2)} Go`.replace(".", ",") : `${Math.round(b / 1e6)} Mo`);
+const errMsg = (e) => String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const TEST = new URLSearchParams(location.search).has("fakeScreen"); // tests automatisés : écran factice
 const PART = 8 * 1024 * 1024;          // taille fixe des morceaux envoyés
@@ -55,7 +56,7 @@ class Uploader {
 
 // ───────── mode local (appli de bureau) : vidéos sur le PC, partage par Google Drive ─────────
 const LOCAL = !!(window.recoDesktop && window.recoDesktop.local);
-const L = LOCAL ? window.recoDesktop.lib : null, D = LOCAL ? window.recoDesktop.drive : null;
+const L = LOCAL ? window.recoDesktop.lib : null, D = LOCAL ? window.recoDesktop.drive : null, C = LOCAL ? window.recoDesktop.cloud : null;
 class LocalWriter { // même interface que Uploader, mais écrit dans Vidéos/Reco pendant l'enregistrement
   constructor(ext) { this.ext = ext; this.sent = 0; this.pendingSize = 0; this.q = Promise.resolve(); }
   async start() { Object.assign(this, await L.start(this.ext)); return this; }
@@ -69,7 +70,7 @@ class LocalWriter { // même interface que Uploader, mais écrit dans Vidéos/Re
 const Writer = LOCAL ? LocalWriter : Uploader;
 const thumbOf = (v) => (LOCAL ? v.thumbUrl : `/t/${v.id}`);
 const fileOf = (v) => (LOCAL ? v.url : `/f/${v.id}`);
-const linkOf = (v) => (LOCAL ? v.drive?.link || "" : `${location.origin}/v/${v.id}`);
+const linkOf = (v) => (LOCAL ? v.cloud?.link || v.drive?.link || "" : `${location.origin}/v/${v.id}`);
 async function saveThumb(meta, blob) {
   if (!blob) return meta;
   if (LOCAL) return L.thumb(meta.id, await blob.arrayBuffer());
@@ -84,8 +85,45 @@ async function renderDrive() {
     : s.configured ? `<span class="gd"></span><span class="gdt">Google Drive<small>non connecté</small></span><button class="link" id="gd-c">Connecter</button>`
     : `<span class="gd"></span><span class="gdt">Google Drive<small>non configuré</small></span>`;
   $("#gd-x")?.addEventListener("click", async () => { if (confirm("Déconnecter Google Drive ? Les liens déjà partagés continuent de marcher.")) { await D.disconnect(); renderDrive(); } });
-  $("#gd-c")?.addEventListener("click", async () => { try { await D.connect(); } catch (e) { toast(e.message); } renderDrive(); });
+  $("#gd-c")?.addEventListener("click", async () => { try { await D.connect(); } catch (e) { toast(errMsg(e)); } renderDrive(); });
 }
+// ── « Mon serveur Reco » (Cloudflare de l'utilisateur) ──
+async function renderCloud() {
+  const el = $("#cloud-st"); if (!el || !LOCAL) return;
+  const s = await C.status(); el.hidden = false;
+  el.innerHTML = s.connected ? `<span class="gd on"></span><span class="gdt">Serveur Reco<small>${esc(s.server.replace(/^https?:\/\//, ""))}</small></span><button class="link" id="cl-x">Déconnecter</button>`
+    : `<span class="gd"></span><span class="gdt">Serveur Reco<small>non connecté</small></span><button class="link" id="cl-c">Connecter</button>`;
+  $("#cl-x")?.addEventListener("click", async () => { if (confirm("Déconnecter ton serveur Reco ? Les liens déjà publiés continuent de marcher.")) { await C.disconnect(); renderCloud(); } });
+  $("#cl-c")?.addEventListener("click", () => connectCloud());
+  return s;
+}
+function connectCloud() { // fenêtre de connexion ; résout true si connecté
+  return new Promise((resolve) => {
+    const d = $("#d-cloud"); let done = false; $("#c-err").textContent = ""; if (!$("#c-name").value && me) $("#c-name").value = me.name;
+    d.showModal();
+    $("#f-cloud").onsubmit = async (e) => {
+      if (e.submitter?.value !== "ok") return;
+      e.preventDefault(); $("#c-go").disabled = true; $("#c-err").textContent = "";
+      try { await C.connect({ url: $("#c-url").value.trim(), name: $("#c-name").value.trim(), code: $("#c-code").value }); $("#c-code").value = ""; done = true; resolve(true); d.close(); renderCloud(); toast("Serveur connecté"); }
+      catch (err) { $("#c-err").textContent = errMsg(err); }
+      finally { $("#c-go").disabled = false; }
+    };
+    d.onclose = () => { if (!done) resolve(false); };
+  });
+}
+async function publishCloud() {
+  if (!X?.meta) return;
+  if (!(await C.status()).connected && !(await connectCloud())) return;
+  $("#x-err").textContent = ""; $("#x-cshare").disabled = true;
+  try {
+    setProgress(0, "Publication sur ton serveur");
+    const meta = await C.publish(X.meta.id);
+    uploaded(meta, true);
+    await navigator.clipboard.writeText(meta.cloud.link).then(() => toast("Lien copié"), () => {});
+  } catch (err) { $("#x-prog").hidden = true; $("#x-status").textContent = ""; $("#x-err").textContent = errMsg(err); }
+  finally { $("#x-cshare").disabled = false; }
+}
+if (LOCAL) C.onProgress(({ id, f }) => { if (X?.meta?.id === id) setProgress(f, "Publication sur ton serveur"); });
 if (LOCAL) D.onProgress(({ id, f }) => { if (X?.meta?.id === id) setProgress(f, "Envoi sur Google Drive"); });
 async function shareDrive() {
   if (!X?.meta) return;
@@ -99,7 +137,7 @@ async function shareDrive() {
     uploaded(meta, true);
     await navigator.clipboard.writeText(meta.drive.link).then(() => toast("Lien Google Drive copié"), () => {});
     $("#x-status").textContent = "✓ Partagée sur Google Drive (Google peut mettre quelques minutes à préparer la lecture)";
-  } catch (err) { $("#x-prog").hidden = true; $("#x-status").textContent = ""; $("#x-err").textContent = err.message; }
+  } catch (err) { $("#x-prog").hidden = true; $("#x-status").textContent = ""; $("#x-err").textContent = errMsg(err); }
   finally { $("#x-gshare").disabled = false; }
 }
 
@@ -112,10 +150,11 @@ async function boot() {
     me = await L.me();
     $("#shell").hidden = false;
     $("#ws-name").textContent = `Espace de ${me.name}`;
-    $("#who").innerHTML = `<span class="av">${esc(me.name.slice(0, 1).toUpperCase())}</span><span class="nm">${esc(me.name)}</span><button class="link" id="b-folder" title="${esc(me.folder)}">Dossier</button>`;
+    $("#who").innerHTML = `<span class="av">${esc(me.name.slice(0, 1).toUpperCase())}</span><span class="nm edit" id="b-name" title="Changer ton prénom">${esc(me.name)}</span><button class="link" id="b-folder" title="${esc(me.folder)}">Dossier</button>`;
     $("#b-folder").onclick = () => L.openFolder();
+    $("#b-name").onclick = async () => { const n = prompt("Ton prénom", me.name); if (n && n.trim()) { await L.setName(n); boot(); } };
     $('#nav [data-f="all"]').hidden = true;
-    renderDrive();
+    renderDrive(); renderCloud();
     return loadLib();
   }
   try { me = await api("/api/me"); } catch { me = null; }
@@ -128,7 +167,7 @@ async function boot() {
 }
 $("#f-login").onsubmit = async (e) => {
   e.preventDefault(); $("#l-err").textContent = "";
-  try { await api("/api/login", { name: $("#l-name").value, code: $("#l-code").value }); boot(); } catch (err) { $("#l-err").textContent = err.message; }
+  try { await api("/api/login", { name: $("#l-name").value, code: $("#l-code").value }); boot(); } catch (err) { $("#l-err").textContent = errMsg(err); }
 };
 
 let lib = [], LF = "mine";
@@ -169,8 +208,8 @@ function renderLib() {
     const when = v.updated ? `Modifiée ${ago(v.updated)}` : `Créée ${ago(v.created)}`;
     return `<article class="vc" data-id="${v.id}">
       <div class="thw"><a ${LOCAL ? 'href="#" data-act="open"' : `href="/v/${v.id}" target="_blank"`} class="th"><span class="fr"><img src="${thumbOf(v)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"></span>${dur > 0 ? `<span class="d">${fmtDur2(dur)}</span>` : ""}</a>
-        <div class="hov">${LOCAL && !v.drive ? `<button data-act="share" title="Partager via Google Drive">${IC.share}</button>` : `<button data-act="copy" title="Copier le lien">${IC.link}</button>`}${LOCAL ? `<button data-act="reveal" title="Afficher dans le dossier">${IC.folder}</button>` : ""}${mine ? `<button data-act="edit" title="Modifier">${IC.edit}</button><button data-act="del" title="Supprimer">${IC.del}</button>` : ""}</div></div>
-      <div class="vi"><b title="${esc(v.title)}">${esc(v.title)}</b><span class="muted">${LF === "all" ? esc(v.author) + " · " : ""}${when}${v.views ? ` · ${v.views} vue${v.views > 1 ? "s" : ""}` : ""}${LOCAL && v.drive ? " · Partagée" : ""}</span></div>
+        <div class="hov">${LOCAL && !v.drive && !v.cloud ? `<button data-act="share" title="Partager">${IC.share}</button>` : `<button data-act="copy" title="Copier le lien">${IC.link}</button>`}${LOCAL ? `<button data-act="reveal" title="Afficher dans le dossier">${IC.folder}</button>` : ""}${mine ? `<button data-act="edit" title="Modifier">${IC.edit}</button><button data-act="del" title="Supprimer">${IC.del}</button>` : ""}</div></div>
+      <div class="vi"><b title="${esc(v.title)}">${esc(v.title)}</b><span class="muted">${LF === "all" ? esc(v.author) + " · " : ""}${when}${v.views ? ` · ${v.views} vue${v.views > 1 ? "s" : ""}` : ""}${LOCAL && v.cloud ? " · En ligne" : LOCAL && v.drive ? " · Sur Drive" : ""}</span></div>
     </article>`;
   }).join("");
 }
@@ -184,7 +223,7 @@ $("#grid").onclick = async (e) => {
   const v = lib.find((x) => x.id === id);
   if (b.dataset.act === "copy") { await navigator.clipboard.writeText(linkOf(v)); toast("Lien copié"); }
   if (b.dataset.act === "edit" || b.dataset.act === "open") openReview({ meta: v });
-  if (b.dataset.act === "share") { openReview({ meta: v }); shareDrive(); }
+  if (b.dataset.act === "share") openReview({ meta: v }); // l'écran vidéo propose : mon serveur ou Google Drive
   if (b.dataset.act === "reveal") L.reveal(id);
   if (b.dataset.act === "del" && confirm(LOCAL ? "Supprimer définitivement cette vidéo de ton PC ?" : "Supprimer définitivement cette vidéo ? Le lien ne marchera plus.")) { await deleteVideo(id); loadLib(); }
 };
@@ -290,7 +329,7 @@ $("#b-prepare").onclick = async () => {
     if (S.mode !== "screen") R.cam = await navigator.mediaDevices.getUserMedia({ video: { deviceId: $("#s-cam").value ? { exact: $("#s-cam").value } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } });
     if ($("#s-mic").value !== "none") R.mic = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: $("#s-mic").value ? { exact: $("#s-mic").value } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   } catch (err) {
-    $("#s-err").textContent = err.name === "NotAllowedError" ? "Partage refusé. Réessaie et autorise l'écran, la caméra ou le micro." : `Impossible de démarrer : ${err.message}`;
+    $("#s-err").textContent = err.name === "NotAllowedError" ? "Partage refusé. Réessaie et autorise l'écran, la caméra ou le micro." : `Impossible de démarrer : ${errMsg(err)}`;
     cleanup(); return;
   }
   let w = 1280, h = 720;
@@ -416,7 +455,7 @@ function openReview({ meta = null, localUrl = null, title = "", duration = 0, do
   show("v-review");
   X = { meta, duration: meta?.duration || duration || 0, download, localUrl };
   if (localUrl || meta) $("#xv").src = localUrl || fileOf(meta); else $("#xv").removeAttribute("src");
-  $("#x-gshare").hidden = true; $("#x-reveal").hidden = true;
+  $("#x-gshare").hidden = true; $("#x-cshare").hidden = true; $("#x-reveal").hidden = true;
   $("#x-title").value = meta?.title || title;
   $("#x-err").textContent = ""; $("#x-dl").hidden = !download;
   if (meta) uploaded(meta, true); else { $("#x-share").hidden = true; $("#x-trim").hidden = true; $("#x-done").disabled = true; setProgress(0, "Envoi"); }
@@ -430,9 +469,10 @@ function uploaded(meta, silent) {
   if (LOCAL) {
     if (!X.localUrl && !$("#xv").getAttribute("src")) $("#xv").src = meta.url;
     $("#x-prog").hidden = true; $("#x-done").disabled = false; $("#x-trim").hidden = true; $("#x-dl").hidden = true;
-    $("#x-status").textContent = meta.drive ? "✓ Partagée sur Google Drive" : "✓ Enregistrée sur ton PC";
-    $("#x-share").hidden = !meta.drive; $("#x-gshare").hidden = !!meta.drive; $("#x-reveal").hidden = false;
-    if (meta.drive) { $("#x-link").value = meta.drive.link; $("#x-open").href = meta.drive.link; }
+    const link = meta.cloud?.link || meta.drive?.link;
+    $("#x-status").textContent = meta.cloud ? "✓ Enregistrée sur ton PC et publiée sur ton serveur" : meta.drive ? "✓ Enregistrée sur ton PC et partagée sur Google Drive" : "✓ Enregistrée sur ton PC. Tu veux la partager ?";
+    $("#x-share").hidden = !link; $("#x-cshare").hidden = !!meta.cloud; $("#x-gshare").hidden = !!meta.drive; $("#x-reveal").hidden = false;
+    if (link) { $("#x-link").value = link; $("#x-open").href = link; }
     return;
   }
   $("#x-prog").hidden = true; $("#x-status").textContent = "✓ Prête à partager";
@@ -444,7 +484,7 @@ function uploaded(meta, silent) {
 }
 function uploadFailed(err, up) {
   $("#x-status").textContent = ""; $("#x-prog").hidden = true;
-  $("#x-err").textContent = `Envoi impossible : ${err.message}. ${X.download ? "Télécharge la vidéo pour ne pas la perdre." : ""}`;
+  $("#x-err").textContent = `Envoi impossible : ${errMsg(err)}. ${X.download ? "Télécharge la vidéo pour ne pas la perdre." : ""}`;
   $("#x-dl").hidden = !X.download; $("#x-done").disabled = false; up?.abort();
 }
 function setupTrim(meta) {
@@ -468,6 +508,7 @@ async function saveReview() {
 $("#x-title").onchange = () => saveReview().catch(() => {});
 $("#x-done").onclick = async () => { try { await saveReview(); } catch (e) { $("#x-err").textContent = e.message; return; } X = null; cleanup(); loadLib(); };
 $("#x-gshare").onclick = () => shareDrive();
+$("#x-cshare").onclick = () => publishCloud();
 $("#x-reveal").onclick = () => X?.meta && L.reveal(X.meta.id);
 $("#x-copy").onclick = async () => { await saveReview().catch(() => {}); await navigator.clipboard.writeText($("#x-link").value); toast("Lien copié"); };
 $("#x-dl").onclick = () => { const a = document.createElement("a"); a.href = X.download || `/f/${X.meta.id}`; a.download = `${$("#x-title").value || "video"}`; a.click(); };

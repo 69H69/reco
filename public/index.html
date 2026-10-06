@@ -37,6 +37,7 @@
     </nav>
     <div class="side-foot">
       <a class="navlink" id="dl-app" href="/download" hidden><svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8.5 20h7M12 16.5V20"/></svg>Télécharger l'app</a>
+      <div class="drive" id="cloud-st" hidden></div>
       <div class="drive" id="drive-st" hidden></div>
       <p class="muted small" id="quota"></p>
       <div class="who" id="who"></div>
@@ -108,7 +109,7 @@
           <div>
             <div class="xhead"><span class="status" id="x-status"></span></div>
             <div class="prog" id="x-prog" hidden><div id="x-bar"></div></div>
-            <div class="lact"><button class="btn" id="x-gshare" hidden>Partager via Google Drive</button><button class="btn ghost" id="x-reveal" hidden>Afficher dans le dossier</button></div>
+            <div class="lact"><button class="btn" id="x-cshare" hidden>Publier sur mon serveur Reco</button><button class="btn ghost" id="x-gshare" hidden>Partager via Google Drive</button><button class="btn ghost" id="x-reveal" hidden>Afficher dans le dossier</button></div>
             <div class="share" id="x-share" hidden>
               <input id="x-link" readonly><button class="btn" id="x-copy">Copier le lien</button><a class="btn ghost" id="x-open" target="_blank">Ouvrir</a>
             </div>
@@ -132,6 +133,18 @@
     </section>
   </main>
 </div>
+
+<dialog class="modal" id="d-cloud">
+  <form method="dialog" id="f-cloud">
+    <h2>Mon serveur Reco</h2>
+    <p class="muted small">Pour avoir tout comme Tella (page de partage, vues, bibliothèque en ligne), publie tes vidéos sur <b>ton propre serveur</b> Cloudflare. Tu le crées une fois avec le bouton « Deploy to Cloudflare » du projet (gratuit jusqu'à 10 Go ; Cloudflare demande une carte pour activer le stockage R2).</p>
+    <label>Adresse du serveur<input id="c-url" placeholder="https://reco.ton-compte.workers.dev" required></label>
+    <label>Ton prénom<input id="c-name" maxlength="40" required></label>
+    <label>Code d'invitation<input id="c-code" type="password" required></label>
+    <p class="err" id="c-err"></p>
+    <div class="actions"><button class="btn ghost" value="cancel" formnovalidate>Annuler</button><button class="btn" id="c-go" value="ok">Connecter</button></div>
+  </form>
+</dialog>
 
 <div class="toast" id="toast"></div>
 <script src="/app.js"></script>

@@ -40,17 +40,38 @@ try {
   await pg.evaluate(() => { const v = document.querySelector("#xv"); v.currentTime = 4; });
   await sleep(800);
   ok((await pg.evaluate(() => document.querySelector("#xv").currentTime)) > 3.5, "avance rapide dans la vidéo locale (lecture partielle)");
-  // titre + partage Drive (simulé)
-  await pg.fill("#x-title", "Test local"); await pg.dispatchEvent("#x-title", "change");
+  // titre
+  await pg.fill("#x-title", "Test local"); await pg.dispatchEvent("#x-title", "change"); await sleep(400);
+  ok(await pg.isVisible("#x-cshare") && await pg.isVisible("#x-gshare"), "fin d'enregistrement : choix « mon serveur Reco » ou « Google Drive »");
+  // publication sur « mon serveur Reco » (serveur local de test, qui imite un serveur Cloudflare)
+  await pg.click("#x-cshare");
+  await pg.waitForSelector("#d-cloud[open]");
+  await pg.fill("#c-url", "http://localhost:8787"); await pg.fill("#c-name", "Alex"); await pg.fill("#c-code", "mauvais"); await pg.click("#c-go");
+  await pg.waitForFunction(() => document.querySelector("#c-err").textContent.length > 0);
+  const cerr = await pg.textContent("#c-err");
+  ok(cerr === "Code d'invitation incorrect.", `mauvais code refusé, message clair : « ${cerr} »`);
+  await pg.fill("#c-code", "test-local-123"); await pg.click("#c-go");
+  await pg.waitForSelector("#x-share:not([hidden])", { timeout: 60000 });
+  const clink = await pg.inputValue("#x-link"), cid = clink.split("/").pop();
+  ok(clink.startsWith("http://localhost:8787/v/"), `publiée sur mon serveur : ${clink}`);
+  const remote = Buffer.from(await (await fetch(`http://localhost:8787/f/${cid}`)).arrayBuffer());
+  ok(remote.equals(fs.readFileSync(path.join(VIDS, vid))), `le fichier en ligne est identique à l'octet près au fichier du PC (${(remote.length / 1e6).toFixed(1)} Mo)`);
+  const page = await (await fetch(clink)).text();
+  ok(page.includes("Test local") && (await fetch(`http://localhost:8787/t/${cid}`)).status === 200, "page de partage avec le titre et la miniature");
+  ok((await pg.textContent("#cloud-st")).includes("localhost:8787"), "serveur affiché comme connecté dans la barre latérale");
+  // partage Google Drive (simulé) en plus
+  ok(!(await pg.evaluate(() => document.querySelector("#d-cloud").open)), "la fenêtre de connexion s'est refermée");
+  ok(await pg.isVisible("#x-gshare"), "Google Drive reste proposé en plus");
   await pg.click("#x-gshare");
-  await pg.waitForSelector("#x-share:not([hidden])", { timeout: 20000 });
+  await pg.waitForFunction(() => document.querySelector("#x-gshare").hidden && /Google Drive/.test(document.querySelector("#x-status").textContent), null, { timeout: 30000 });
   const link = await pg.inputValue("#x-link");
-  ok(link.startsWith("https://drive.google.com/file/d/"), `lien Google Drive obtenu : ${link}`);
-  ok(JSON.parse(fs.readFileSync(path.join(VIDS, `${id}.json`), "utf8")).drive?.link === link, "lien mémorisé avec la vidéo");
+  ok(link.startsWith("http://localhost:8787/v/"), "le lien affiché reste celui de mon serveur (prioritaire)");
+  const saved = JSON.parse(fs.readFileSync(path.join(VIDS, `${id}.json`), "utf8"));
+  ok(saved.cloud?.link === clink && saved.drive?.link.startsWith("https://drive.google.com/file/d/"), "les deux liens (serveur + Drive) sont mémorisés avec la vidéo");
   ok((await pg.textContent("#drive-st")).includes("test@exemple.com"), "Google Drive affiché comme connecté");
   await pg.click("#x-done"); await pg.waitForSelector(".vc");
   const card = await pg.textContent(`.vc[data-id="${id}"]`);
-  ok(card.includes("Test local") && card.includes("Partagée"), "la bibliothèque affiche la vidéo, son titre et « Partagée »");
+  ok(card.includes("Test local") && card.includes("En ligne"), "la bibliothèque affiche la vidéo, son titre et « En ligne »");
   // suppression
   pg.once("dialog", (d) => d.accept());
   await pg.hover(`.vc[data-id="${id}"]`); await pg.click(`.vc[data-id="${id}"] [data-act="del"]`);

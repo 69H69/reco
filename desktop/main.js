@@ -7,6 +7,7 @@ const path = require("path");
 const fs = require("fs");
 const local = require("./local");
 const drive = require("./drive");
+const cloud = require("./cloud");
 
 const TEST = process.env.RECO_TEST === "1";
 if (TEST) {
@@ -135,6 +136,7 @@ app.whenReady().then(() => {
   local.handleProtocol();
   local.register({ loadCfg, saveCfg });
   drive.register({ loadCfg, saveCfg, win: () => win });
+  cloud.register({ loadCfg, saveCfg });
   createMain();
   createTray();
   globalShortcut.register("CommandOrControl+Shift+R", () => {

@@ -14,6 +14,10 @@ contextBridge.exposeInMainWorld("recoDesktop", {
     patch: (id, b) => inv("local:patch", id, b), del: (id) => inv("local:delete", id),
     reveal: (id) => inv("local:reveal", id), openFolder: () => inv("local:openFolder"),
   },
+  cloud: {
+    status: () => inv("cloud:status"), connect: (o) => inv("cloud:connect", o), disconnect: () => inv("cloud:disconnect"),
+    publish: (id) => inv("cloud:publish", id), onProgress: (cb) => ipcRenderer.on("cloud:progress", (e, d) => cb(d)),
+  },
   drive: {
     status: () => inv("drive:status"), connect: () => inv("drive:connect"), disconnect: () => inv("drive:disconnect"),
     share: (id) => inv("drive:share", id), onProgress: (cb) => ipcRenderer.on("drive:progress", (e, d) => cb(d)),

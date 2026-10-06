@@ -21,6 +21,13 @@
 |---|---|---|
 | ![Préparer](docs/setup.png) | ![Partager](docs/share.png) | ![Page de partage](docs/player.png) |
 
+## Deux façons d'utiliser Reco
+
+1. **Appli de bureau, sans serveur** (le plus simple) : tu installes Reco, tu enregistres, la vidéo est **sauvegardée sur ton PC** (dossier `Vidéos\Reco`). À la fin de l'enregistrement, tu choisis comment la partager :
+   - **Google Drive** : la vidéo part sur *ton* Drive (15 Go gratuits) et le lien est copié ;
+   - **Mon serveur Reco** : pour avoir **tout comme Tella** (page de partage, vues, bibliothèque en ligne, aperçu WhatsApp), publie sur *ton propre serveur Cloudflare* (voir « Installation » ci-dessous ; Cloudflare demande une carte bancaire pour activer le stockage R2, gratuit jusqu'à 10 Go). Dans l'appli : barre latérale > *Serveur Reco* > *Connecter* (adresse, prénom, code d'invitation).
+2. **Site web seul** (sur ton serveur Cloudflare) : enregistrement dans Chrome ou Edge, sans rien installer.
+
 ## Appli de bureau (Windows et Mac)
 
 Comme Tella, Reco existe en **appli à installer** (`desktop/`, Electron). Elle ajoute :
@@ -29,16 +36,18 @@ Comme Tella, Reco existe en **appli à installer** (`desktop/`, Electron). Elle 
 - la fenêtre principale qui **se range pendant l'enregistrement** et revient à l'arrêt ;
 - une icône dans la barre système et le raccourci **Ctrl+Maj+R** (lancer / arrêter).
 
-Au premier lancement, elle demande l'adresse de ton serveur Reco. Le site propose aussi un lien **« Télécharger l'app »** (`/download`), qui sert l'installateur déposé dans R2 :
+Elle fonctionne seule (vidéos sur le PC). Le site d'un serveur Reco propose aussi un lien **« Télécharger l'app »** (`/download`), qui sert les installateurs déposés dans R2 :
 ```bash
 cd desktop && npm install && npm run dist          # fabrique dist/Reco-Setup-x.y.z.exe
-npx wrangler r2 object put reco-videos/apps/Reco-Setup.exe --file desktop/dist/Reco-Setup-1.0.0.exe --remote
+npx wrangler r2 object put reco-videos/apps/Reco-Setup.exe --file desktop/dist/Reco-Setup-1.0.0.exe --remote   # idem apps/Reco-arm64.dmg et apps/Reco-x64.dmg
 ```
 L'installateur n'est pas signé numériquement : au premier lancement, Windows affiche « Windows a protégé votre ordinateur ». Clique sur *Informations complémentaires*, puis sur *Exécuter quand même*.
 
 **Mac** (`Reco-x.y.z-arm64.dmg` pour les Mac Apple Silicon M1 à M4, `x64` pour les Mac Intel) : ouvre le `.dmg` et glisse Reco dans Applications. L'appli n'est pas signée par Apple : au premier lancement, fais un clic droit sur Reco puis *Ouvrir*. Si macOS dit qu'elle est « endommagée », lance `xattr -cr /Applications/Reco.app` dans le Terminal. macOS demande ensuite l'autorisation d'enregistrer l'écran (Réglages Système > Confidentialité et sécurité > Enregistrement de l'écran). Sur Mac, le son de l'ordinateur n'est pas encore capturé (micro uniquement).
 
 **Fabriquer les installateurs** : l'onglet *Actions* du dépôt (workflow « Appli de bureau ») produit le `.dmg` et le `.exe` sur les machines de GitHub et vérifie que l'appli démarre. Pousser un tag `v1.0.1` publie une *release* avec les fichiers.
+
+**Partage Google Drive** : crée un projet sur console.cloud.google.com, active *Google Drive API*, configure l'écran de consentement (champ d'accès `drive.file` uniquement, puis *Publier*), crée un *ID client OAuth* de type **Application de bureau**, et mets-le dans `desktop/google-client.json` (`{"client_id": "…", "client_secret": "…"}`) ou dans le secret GitHub `GOOGLE_CLIENT_JSON` pour les builds automatiques.
 
 ## Combien ça coûte ?
 
