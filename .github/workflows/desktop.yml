@@ -7,6 +7,9 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: write # lets the workflow create the GitHub release when a v* tag is pushed
+
 jobs:
   build:
     strategy:
